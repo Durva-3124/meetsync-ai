@@ -9,6 +9,11 @@ on:
 jobs:
   backend-ci:
     runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
     defaults:
       run:
         working-directory: ./backend
@@ -39,11 +44,11 @@ jobs:
         run: npm run test:e2e
         env:
           MONGO_URI: mongodb://127.0.0.1:27017/meetsync_test
-          JWT_SECRET: ci-test-secret
+          JWT_SECRET: ci-test-secret-at-least-32-chars!!
           AI_USE_MOCKS: "true"
 
       - name: Run Resilience Tests
         run: npm run test:resilience
         env:
           MONGO_URI: mongodb://127.0.0.1:27017/meetsync_test
-          JWT_SECRET: ci-test-secret
+          JWT_SECRET: ci-test-secret-at-least-32-chars!!
