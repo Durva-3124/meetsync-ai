@@ -8,6 +8,7 @@ import { EffectivenessScore } from '../models/EffectivenessScore.js';
 import { Meeting } from '../models/Meeting.js';
 import { User } from '../models/User.js';
 import { hashPassword } from '../utils/auth.js';
+import { disconnectRedis } from '../services/redisClient.js';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ describe('AI resilience — circuit breaker isolation', async () => {
   after(async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
+    await disconnectRedis();
   });
 
   beforeEach(() => {

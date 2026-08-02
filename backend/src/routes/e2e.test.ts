@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import app from '../app.js';
 import { connectDB } from '../config/db.js';
+import { disconnectRedis } from '../services/redisClient.js';
 
 async function pollStatus(
   meetingId: string,
@@ -59,6 +60,7 @@ describe('P0 end-to-end pipeline', async () => {
   after(async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
+    await disconnectRedis();
   });
 
   // ── Health ──────────────────────────────────────────────────────────────────

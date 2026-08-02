@@ -13,12 +13,22 @@ export function getRedisClient(): Redis {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
+      // Never retry when Redis is unavailable — prevents event-loop hang in tests
+      retryStrategy: () => null,
     });
     _client.on('error', (err: Error) => {
       console.error('[redis]', err.message);
     });
   }
   return _client;
+}
+
+/** Disconnect and destroy the Redis client — call in test teardown. */
+export async function disconnectRedis(): Promise<void> {
+  if (_client) {
+    _client.disconnect();
+    _client = null;
+  }
 }
 
 export async function cacheGet<T>(key: string): Promise<T | null> {

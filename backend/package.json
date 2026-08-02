@@ -8,7 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "tsx --test",
+    "test": "tsx --test src/**/*.test.ts",
     "test:e2e": "cross-env MONGO_URI=mongodb://127.0.0.1:27017/meetsync_test AI_USE_MOCKS=true tsx --test src/routes/e2e.test.ts",
     "test:resilience": "cross-env MONGO_URI=mongodb://127.0.0.1:27017/meetsync_test tsx --test src/integrations/aiClient.test.ts",
     "lint": "eslint .",
