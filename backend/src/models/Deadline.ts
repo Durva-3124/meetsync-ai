@@ -18,7 +18,7 @@ const deadlineSchema = new Schema<IDeadline>(
     deadline: { type: Date, required: true },
     rawText: { type: String, required: true },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 deadlineSchema.index({ meetingId: 1 });

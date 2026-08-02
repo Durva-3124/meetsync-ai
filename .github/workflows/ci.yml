@@ -21,10 +21,26 @@ jobs:
           node-version: '20'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run Linter
         run: npm run lint
 
       - name: Build Project
         run: npm run build
+
+      - name: Run Tests
+        run: npm test
+
+      - name: Run E2E Tests
+        run: npm run test:e2e
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017/meetsync_test
+          JWT_SECRET: ci-test-secret
+          AI_USE_MOCKS: "true"
+
+      - name: Run Resilience Tests
+        run: npm run test:resilience
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017/meetsync_test
+          JWT_SECRET: ci-test-secret

@@ -1,6 +1,11 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
-export const PROCESSING_STATUSES = ['pending', 'processing', 'completed', 'failed'] as const;
+export const PROCESSING_STATUSES = [
+  'pending',
+  'processing',
+  'completed',
+  'failed',
+] as const;
 export type ProcessingStatus = (typeof PROCESSING_STATUSES)[number];
 
 export interface IMeeting extends Document {
@@ -48,7 +53,7 @@ const meetingSchema = new Schema<IMeeting>(
       },
     ],
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 export const Meeting = model<IMeeting>('Meeting', meetingSchema);

@@ -31,7 +31,11 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
-export async function cacheSet(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+export async function cacheSet(
+  key: string,
+  value: unknown,
+  ttlSeconds: number
+): Promise<void> {
   if (!REDIS_ENABLED) return;
   try {
     await getRedisClient().set(key, JSON.stringify(value), 'EX', ttlSeconds);

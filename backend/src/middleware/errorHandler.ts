@@ -11,8 +11,7 @@ export function errorHandler(
   err: Error,
   req: Request,
   res: Response,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _next: NextFunction,
+  _next: NextFunction
 ): void {
   // CORS rejection
   if (err.message.startsWith('CORS:')) {
@@ -22,7 +21,10 @@ export function errorHandler(
 
   // Mongoose CastError (invalid ObjectId etc.)
   if (err instanceof MongooseError.CastError) {
-    res.status(400).json({ code: 'INVALID_ID', message: `Invalid value for field: ${err.path}` });
+    res.status(400).json({
+      code: 'INVALID_ID',
+      message: `Invalid value for field: ${err.path}`,
+    });
     return;
   }
 

@@ -5,13 +5,22 @@ import request from 'supertest';
 import app from '../app.js';
 import { connectDB } from '../config/db.js';
 
-async function pollStatus(meetingId: string, token: string, target: string, maxMs = 8000): Promise<void> {
+async function pollStatus(
+  meetingId: string,
+  token: string,
+  target: string,
+  maxMs = 8000
+): Promise<void> {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
     const res = await request(app)
       .get(`/api/meetings/${meetingId}`)
       .set('Authorization', `Bearer ${token}`);
-    if ((res.body as { meeting: { processingStatus: string } }).meeting?.processingStatus === target) return;
+    if (
+      (res.body as { meeting: { processingStatus: string } }).meeting
+        ?.processingStatus === target
+    )
+      return;
     await new Promise((r) => setTimeout(r, 150));
   }
   throw new Error(`Timed out waiting for processingStatus=${target}`);
@@ -19,11 +28,19 @@ async function pollStatus(meetingId: string, token: string, target: string, maxM
 
 function wavBuffer(): Buffer {
   const buf = Buffer.alloc(44);
-  buf.write('RIFF', 0); buf.writeUInt32LE(36, 4); buf.write('WAVE', 8);
-  buf.write('fmt ', 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20);
-  buf.writeUInt16LE(1, 22); buf.writeUInt32LE(44100, 24); buf.writeUInt32LE(88200, 28);
-  buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
-  buf.write('data', 36); buf.writeUInt32LE(0, 40);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36, 4);
+  buf.write('WAVE', 8);
+  buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(44100, 24);
+  buf.writeUInt32LE(88200, 28);
+  buf.writeUInt16LE(2, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(0, 40);
   return buf;
 }
 
@@ -56,7 +73,10 @@ describe('P0 end-to-end pipeline', async () => {
 
   it('POST /api/auth/register creates user and returns tokens', async () => {
     const res = await request(app).post('/api/auth/register').send({
-      name: 'Test User', email: 'test@example.com', password: 'password123', role: 'admin',
+      name: 'Test User',
+      email: 'test@example.com',
+      password: 'password123',
+      role: 'admin',
     });
     assert.equal(res.status, 201);
     const body = res.body as { accessToken: string; refreshToken: string };
@@ -67,14 +87,17 @@ describe('P0 end-to-end pipeline', async () => {
 
   it('POST /api/auth/register rejects duplicate email', async () => {
     const res = await request(app).post('/api/auth/register').send({
-      name: 'Test User', email: 'test@example.com', password: 'password123',
+      name: 'Test User',
+      email: 'test@example.com',
+      password: 'password123',
     });
     assert.equal(res.status, 409);
   });
 
   it('POST /api/auth/login returns tokens', async () => {
     const res = await request(app).post('/api/auth/login').send({
-      email: 'test@example.com', password: 'password123',
+      email: 'test@example.com',
+      password: 'password123',
     });
     assert.equal(res.status, 200);
     const body = res.body as { accessToken: string; refreshToken: string };
@@ -85,15 +108,21 @@ describe('P0 end-to-end pipeline', async () => {
 
   it('POST /api/auth/login rejects wrong password', async () => {
     const res = await request(app).post('/api/auth/login').send({
-      email: 'test@example.com', password: 'wrongpassword',
+      email: 'test@example.com',
+      password: 'wrongpassword',
     });
     assert.equal(res.status, 401);
   });
 
   it('GET /api/auth/me returns current user', async () => {
-    const res = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${accessToken}`);
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(res.status, 200);
-    assert.equal((res.body as { user: { email: string } }).user.email, 'test@example.com');
+    assert.equal(
+      (res.body as { user: { email: string } }).user.email,
+      'test@example.com'
+    );
   });
 
   it('GET /api/auth/me rejects unauthenticated request', async () => {
@@ -102,7 +131,9 @@ describe('P0 end-to-end pipeline', async () => {
   });
 
   it('POST /api/auth/refresh issues new token pair', async () => {
-    const res = await request(app).post('/api/auth/refresh').send({ refreshToken });
+    const res = await request(app)
+      .post('/api/auth/refresh')
+      .send({ refreshToken });
     assert.equal(res.status, 200);
     const body = res.body as { accessToken: string };
     assert.ok(body.accessToken);
@@ -115,9 +146,15 @@ describe('P0 end-to-end pipeline', async () => {
     const res = await request(app)
       .post('/api/meetings')
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ title: 'Sprint Review', scheduledAt: new Date(Date.now() + 86400000).toISOString() });
+      .send({
+        title: 'Sprint Review',
+        scheduledAt: new Date(Date.now() + 86400000).toISOString(),
+      });
     assert.equal(res.status, 201);
-    assert.equal((res.body as { meeting: { title: string } }).meeting.title, 'Sprint Review');
+    assert.equal(
+      (res.body as { meeting: { title: string } }).meeting.title,
+      'Sprint Review'
+    );
     meetingId = (res.body as { meeting: { _id: string } }).meeting._id;
   });
 
@@ -134,7 +171,10 @@ describe('P0 end-to-end pipeline', async () => {
       .get(`/api/meetings/${meetingId}`)
       .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(res.status, 200);
-    assert.equal((res.body as { meeting: { _id: string } }).meeting._id, meetingId);
+    assert.equal(
+      (res.body as { meeting: { _id: string } }).meeting._id,
+      meetingId
+    );
   });
 
   it('GET /api/meetings/:id returns 404 for unknown id', async () => {
@@ -159,7 +199,10 @@ describe('P0 end-to-end pipeline', async () => {
     const res = await request(app)
       .post(`/api/meetings/${meetingId}/audio`)
       .set('Authorization', `Bearer ${accessToken}`)
-      .attach('file', Buffer.from('not audio'), { filename: 'test.txt', contentType: 'text/plain' });
+      .attach('file', Buffer.from('not audio'), {
+        filename: 'test.txt',
+        contentType: 'text/plain',
+      });
     assert.equal(res.status, 400);
   });
 
@@ -167,9 +210,15 @@ describe('P0 end-to-end pipeline', async () => {
     const res = await request(app)
       .post(`/api/meetings/${meetingId}/audio`)
       .set('Authorization', `Bearer ${accessToken}`)
-      .attach('file', wavBuffer(), { filename: 'meeting.wav', contentType: 'audio/wav' });
+      .attach('file', wavBuffer(), {
+        filename: 'meeting.wav',
+        contentType: 'audio/wav',
+      });
     assert.equal(res.status, 202);
-    assert.equal((res.body as { processingStatus: string }).processingStatus, 'processing');
+    assert.equal(
+      (res.body as { processingStatus: string }).processingStatus,
+      'processing'
+    );
   });
 
   it('processingStatus flips to completed after audio upload', async () => {
@@ -178,8 +227,9 @@ describe('P0 end-to-end pipeline', async () => {
       .get(`/api/meetings/${meetingId}`)
       .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(
-      (res.body as { meeting: { processingStatus: string } }).meeting.processingStatus,
-      'completed',
+      (res.body as { meeting: { processingStatus: string } }).meeting
+        .processingStatus,
+      'completed'
     );
   });
 
@@ -190,7 +240,8 @@ describe('P0 end-to-end pipeline', async () => {
       .get(`/api/meetings/${meetingId}/mom`)
       .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(res.status, 200);
-    const mom = (res.body as { mom: { agenda: unknown[]; summary: string } }).mom;
+    const mom = (res.body as { mom: { agenda: unknown[]; summary: string } })
+      .mom;
     assert.ok(Array.isArray(mom.agenda));
     assert.ok(typeof mom.summary === 'string');
   });
@@ -210,7 +261,9 @@ describe('P0 end-to-end pipeline', async () => {
       .get(`/api/meetings/${meetingId}/tasks`)
       .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(res.status, 200);
-    const tasks = (res.body as { tasks: { requiredSkills: string[]; status: string }[] }).tasks;
+    const tasks = (
+      res.body as { tasks: { requiredSkills: string[]; status: string }[] }
+    ).tasks;
     assert.ok(Array.isArray(tasks));
     assert.ok(tasks.length > 0);
     assert.ok(Array.isArray(tasks[0].requiredSkills));
@@ -231,7 +284,8 @@ describe('P0 end-to-end pipeline', async () => {
       .get(`/api/meetings/${meetingId}/deadlines`)
       .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(res.status, 200);
-    const deadlines = (res.body as { deadlines: { assignee: string }[] }).deadlines;
+    const deadlines = (res.body as { deadlines: { assignee: string }[] })
+      .deadlines;
     assert.ok(Array.isArray(deadlines));
     assert.ok(deadlines.length > 0);
   });
@@ -241,7 +295,11 @@ describe('P0 end-to-end pipeline', async () => {
       .get(`/api/meetings/${meetingId}/score`)
       .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(res.status, 200);
-    const score = (res.body as { score: { score: number; breakdown: object; suggestions: string[] } }).score;
+    const score = (
+      res.body as {
+        score: { score: number; breakdown: object; suggestions: string[] };
+      }
+    ).score;
     assert.ok(typeof score.score === 'number');
     assert.ok(score.score >= 0 && score.score <= 100);
     assert.ok(typeof score.breakdown === 'object');
@@ -256,7 +314,9 @@ describe('P0 end-to-end pipeline', async () => {
       .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(res.status, 200);
     assert.ok(Array.isArray((res.body as { meetings: unknown[] }).meetings));
-    assert.ok((res.body as { pagination: { total: number } }).pagination.total >= 1);
+    assert.ok(
+      (res.body as { pagination: { total: number } }).pagination.total >= 1
+    );
     assert.ok(['HIT', 'MISS'].includes(res.headers['x-cache'] as string));
   });
 
@@ -275,24 +335,53 @@ describe('P0 end-to-end pipeline', async () => {
       .send({ fields: [{ field: 'summary', edited: aiSummary }], lock: false });
 
     assert.equal(res.status, 201);
-    const rv = (res.body as { reviewVersion: { version: number; locked: boolean; fields: { source: string; diff: { op: string }[] }[] } }).reviewVersion;
+    const rv = (
+      res.body as {
+        reviewVersion: {
+          version: number;
+          locked: boolean;
+          fields: { source: string; diff: { op: string }[] }[];
+        };
+      }
+    ).reviewVersion;
     assert.equal(rv.version, 1);
     assert.equal(rv.locked, false);
-    assert.equal(rv.fields[0].source, 'ai');           // unchanged → tagged ai
-    assert.ok(rv.fields[0].diff.every((h: { op: string }) => h.op === 'unchanged'));
+    assert.equal(rv.fields[0].source, 'ai'); // unchanged → tagged ai
+    assert.ok(
+      rv.fields[0].diff.every((h: { op: string }) => h.op === 'unchanged')
+    );
   });
 
   it('PATCH /api/meetings/:id/review creates v2 with manual-tagged edited field and diff hunks', async () => {
     const res = await request(app)
       .patch(`/api/meetings/${meetingId}/review`)
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ fields: [{ field: 'summary', edited: 'Manually revised summary for the sprint.' }], lock: false });
+      .send({
+        fields: [
+          {
+            field: 'summary',
+            edited: 'Manually revised summary for the sprint.',
+          },
+        ],
+        lock: false,
+      });
 
     assert.equal(res.status, 201);
-    const rv = (res.body as { reviewVersion: { version: number; fields: { source: string; diff: { op: string }[] }[] } }).reviewVersion;
+    const rv = (
+      res.body as {
+        reviewVersion: {
+          version: number;
+          fields: { source: string; diff: { op: string }[] }[];
+        };
+      }
+    ).reviewVersion;
     assert.equal(rv.version, 2);
-    assert.equal(rv.fields[0].source, 'manual');       // edited → tagged manual
-    assert.ok(rv.fields[0].diff.some((h: { op: string }) => h.op === 'added' || h.op === 'removed'));
+    assert.equal(rv.fields[0].source, 'manual'); // edited → tagged manual
+    assert.ok(
+      rv.fields[0].diff.some(
+        (h: { op: string }) => h.op === 'added' || h.op === 'removed'
+      )
+    );
   });
 
   it('PATCH /api/meetings/:id/review with lock=true locks the review', async () => {
@@ -307,7 +396,9 @@ describe('P0 end-to-end pipeline', async () => {
       .send({ fields: [{ field: 'summary', edited: aiSummary }], lock: true });
 
     assert.equal(res.status, 201);
-    const rv = (res.body as { reviewVersion: { locked: boolean; lockedAt: string } }).reviewVersion;
+    const rv = (
+      res.body as { reviewVersion: { locked: boolean; lockedAt: string } }
+    ).reviewVersion;
     assert.equal(rv.locked, true);
     assert.ok(rv.lockedAt);
   });
@@ -326,7 +417,9 @@ describe('P0 end-to-end pipeline', async () => {
       .get(`/api/meetings/${meetingId}/review`)
       .set('Authorization', `Bearer ${accessToken}`);
     assert.equal(res.status, 200);
-    const versions = (res.body as { versions: { version: number; locked: boolean }[] }).versions;
+    const versions = (
+      res.body as { versions: { version: number; locked: boolean }[] }
+    ).versions;
     assert.ok(Array.isArray(versions));
     assert.ok(versions.length >= 3);
     // newest first
@@ -338,7 +431,10 @@ describe('P0 end-to-end pipeline', async () => {
   it('PATCH /api/meetings/:id/review returns 403 for employee role', async () => {
     // Register an employee user
     const empRes = await request(app).post('/api/auth/register').send({
-      name: 'Employee', email: 'emp@example.com', password: 'password123', role: 'employee',
+      name: 'Employee',
+      email: 'emp@example.com',
+      password: 'password123',
+      role: 'employee',
     });
     const empToken = (empRes.body as { accessToken: string }).accessToken;
 
@@ -354,14 +450,20 @@ describe('P0 end-to-end pipeline', async () => {
     const mRes = await request(app)
       .post('/api/meetings')
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ title: 'Field Test', scheduledAt: new Date(Date.now() + 86400000).toISOString() });
+      .send({
+        title: 'Field Test',
+        scheduledAt: new Date(Date.now() + 86400000).toISOString(),
+      });
     const fid = (mRes.body as { meeting: { _id: string } }).meeting._id;
 
     // Upload audio so it completes
     await request(app)
       .post(`/api/meetings/${fid}/audio`)
       .set('Authorization', `Bearer ${accessToken}`)
-      .attach('file', wavBuffer(), { filename: 'meeting.wav', contentType: 'audio/wav' });
+      .attach('file', wavBuffer(), {
+        filename: 'meeting.wav',
+        contentType: 'audio/wav',
+      });
     await pollStatus(fid, accessToken, 'completed');
 
     const res = await request(app)

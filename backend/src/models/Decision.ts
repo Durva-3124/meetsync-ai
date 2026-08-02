@@ -16,7 +16,7 @@ const decisionSchema = new Schema<IDecision>(
     madeBy: { type: String, required: true },
     rationale: { type: String },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 decisionSchema.index({ meetingId: 1 });

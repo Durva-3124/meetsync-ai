@@ -22,7 +22,7 @@ export const hashPassword = async (password: string): Promise<string> => {
 
 export const comparePassword = async (
   password: string,
-  hash: string,
+  hash: string
 ): Promise<boolean> => {
   return bcrypt.compare(password, hash);
 };
@@ -34,7 +34,7 @@ export const createTokenPair = (payload: AuthUserPayload): TokenPair => {
   const refreshToken = jwt.sign(
     { ...payload, type: 'refresh' },
     env.JWT_SECRET,
-    { expiresIn: REFRESH_TOKEN_TTL },
+    { expiresIn: REFRESH_TOKEN_TTL }
   );
 
   return { accessToken, refreshToken };
@@ -42,9 +42,10 @@ export const createTokenPair = (payload: AuthUserPayload): TokenPair => {
 
 export const verifyToken = (
   token: string,
-  expectedType: 'access' | 'refresh' = 'access',
+  expectedType: 'access' | 'refresh' = 'access'
 ): AuthUserPayload & JwtPayload => {
-  const payload = jwt.verify(token, env.JWT_SECRET) as JwtPayload & AuthUserPayload;
+  const payload = jwt.verify(token, env.JWT_SECRET) as JwtPayload &
+    AuthUserPayload;
 
   if (expectedType === 'refresh' && payload.type !== 'refresh') {
     throw new Error('Invalid refresh token');

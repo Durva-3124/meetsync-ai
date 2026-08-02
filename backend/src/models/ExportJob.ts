@@ -29,7 +29,7 @@ const auditMarkerSchema = new Schema<IAuditMarker>(
     reviewVersion: { type: Number, required: true },
     reviewedBy: { type: String, required: true },
   },
-  { _id: false },
+  { _id: false }
 );
 
 const exportJobSchema = new Schema<IExportJob>(
@@ -37,12 +37,16 @@ const exportJobSchema = new Schema<IExportJob>(
     meetingId: { type: Schema.Types.ObjectId, ref: 'Meeting', required: true },
     requestedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     format: { type: String, enum: ['docx', 'pdf'], required: true },
-    status: { type: String, enum: ['pending', 'processing', 'done', 'failed'], default: 'pending' },
+    status: {
+      type: String,
+      enum: ['pending', 'processing', 'done', 'failed'],
+      default: 'pending',
+    },
     filePath: { type: String },
     errorMessage: { type: String },
     auditMarkers: { type: [auditMarkerSchema], default: [] },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 exportJobSchema.index({ meetingId: 1, requestedBy: 1 });

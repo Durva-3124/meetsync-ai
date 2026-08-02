@@ -4,7 +4,11 @@ import { Meeting } from '../models/Meeting.js';
 import { Mom } from '../models/Mom.js';
 import { Decision } from '../models/Decision.js';
 import { ReviewVersion, type ReviewedField } from '../models/ReviewVersion.js';
-import { requireAuth, requireRole, AuthRequest } from '../middleware/authMiddleware.js';
+import {
+  requireAuth,
+  requireRole,
+  AuthRequest,
+} from '../middleware/authMiddleware.js';
 import { validateBody } from '../middleware/validate.js';
 import { diffStrings, diffArrays } from '../utils/diff.js';
 
@@ -13,18 +17,21 @@ const router = Router({ mergeParams: true });
 // ── Zod schema ────────────────────────────────────────────────────────────────
 
 const reviewFieldSchema = z.object({
-  field:  z.string().min(1),
+  field: z.string().min(1),
   edited: z.string(),
 });
 
 const patchReviewSchema = z.object({
   fields: z.array(reviewFieldSchema).min(1),
-  lock:   z.boolean().optional().default(false),
+  lock: z.boolean().optional().default(false),
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function resolveOriginal(meetingId: string, field: string): Promise<string | null> {
+async function resolveOriginal(
+  meetingId: string,
+  field: string
+): Promise<string | null> {
   if (field === 'summary') {
     const mom = await Mom.findOne({ meetingId });
     return mom?.summary ?? null;
@@ -47,7 +54,10 @@ async function resolveOriginal(meetingId: string, field: string): Promise<string
 function computeDiff(field: string, original: string, edited: string) {
   if (field === 'agenda') {
     try {
-      return diffArrays(JSON.parse(original) as string[], JSON.parse(edited) as string[]);
+      return diffArrays(
+        JSON.parse(original) as string[],
+        JSON.parse(edited) as string[]
+      );
     } catch {
       return diffStrings(original, edited);
     }
@@ -65,11 +75,15 @@ router.patch(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const meetingId = req.params['id'] as string;
-      const { fields: incomingFields, lock } = req.body as z.infer<typeof patchReviewSchema>;
+      const { fields: incomingFields, lock } = req.body as z.infer<
+        typeof patchReviewSchema
+      >;
 
       const meeting = await Meeting.findById(meetingId);
       if (!meeting) {
-        res.status(404).json({ code: 'MEETING_NOT_FOUND', message: 'Meeting not found' });
+        res
+          .status(404)
+          .json({ code: 'MEETING_NOT_FOUND', message: 'Meeting not found' });
         return;
       }
       if (meeting.processingStatus !== 'completed') {
@@ -81,7 +95,9 @@ router.patch(
         return;
       }
 
-      const latest = await ReviewVersion.findOne({ meetingId }).sort({ version: -1 });
+      const latest = await ReviewVersion.findOne({ meetingId }).sort({
+        version: -1,
+      });
       if (latest?.locked) {
         res.status(423).json({
           code: 'REVIEW_LOCKED',
@@ -106,7 +122,13 @@ router.patch(
           return;
         }
         const source = original === edited ? 'ai' : 'manual';
-        reviewedFields.push({ field, source, original, edited, diff: computeDiff(field, original, edited) });
+        reviewedFields.push({
+          field,
+          source,
+          original,
+          edited,
+          diff: computeDiff(field, original, edited),
+        });
       }
 
       const reviewVersion = await ReviewVersion.create({
@@ -122,41 +144,49 @@ router.patch(
     } catch (err) {
       next(err);
     }
-  },
+  }
 );
 
 // ── GET /api/meetings/:id/review ──────────────────────────────────────────────
 
-router.get('/', requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const meetingId = req.params['id'] as string;
+router.get(
+  '/',
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const meetingId = req.params['id'] as string;
 
-    const meeting = await Meeting.findById(meetingId);
-    if (!meeting) {
-      res.status(404).json({ code: 'MEETING_NOT_FOUND', message: 'Meeting not found' });
-      return;
-    }
-
-    if (req.user!.role === 'employee') {
-      const uid = req.user!.sub;
-      const allowed =
-        meeting.createdBy.toString() === uid ||
-        meeting.participants.some((p) => p.toString() === uid);
-      if (!allowed) {
-        res.status(403).json({ code: 'ACCESS_DENIED', message: 'Access denied' });
+      const meeting = await Meeting.findById(meetingId);
+      if (!meeting) {
+        res
+          .status(404)
+          .json({ code: 'MEETING_NOT_FOUND', message: 'Meeting not found' });
         return;
       }
+
+      if (req.user!.role === 'employee') {
+        const uid = req.user!.sub;
+        const allowed =
+          meeting.createdBy.toString() === uid ||
+          meeting.participants.some((p) => p.toString() === uid);
+        if (!allowed) {
+          res
+            .status(403)
+            .json({ code: 'ACCESS_DENIED', message: 'Access denied' });
+          return;
+        }
+      }
+
+      const versions = await ReviewVersion.find({ meetingId })
+        .sort({ version: -1 })
+        .populate('reviewedBy', 'name email')
+        .populate('lockedBy', 'name email');
+
+      res.json({ versions });
+    } catch (err) {
+      next(err);
     }
-
-    const versions = await ReviewVersion.find({ meetingId })
-      .sort({ version: -1 })
-      .populate('reviewedBy', 'name email')
-      .populate('lockedBy', 'name email');
-
-    res.json({ versions });
-  } catch (err) {
-    next(err);
   }
-});
+);
 
 export default router;

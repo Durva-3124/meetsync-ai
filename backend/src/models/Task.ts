@@ -1,6 +1,11 @@
 import { Schema, model, Document, Types } from 'mongoose';
 
-export const TASK_STATUSES = ['draft', 'assigned', 'in_progress', 'done'] as const;
+export const TASK_STATUSES = [
+  'draft',
+  'assigned',
+  'in_progress',
+  'done',
+] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 export interface ITask extends Document {
@@ -30,13 +35,13 @@ const taskSchema = new Schema<ITask>(
     sourceSpan: {
       type: {
         start: { type: Number, required: true },
-        end:   { type: Number, required: true },
-        text:  { type: String, required: true },
+        end: { type: Number, required: true },
+        text: { type: String, required: true },
       },
       default: undefined,
     },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
 taskSchema.index({ meetingId: 1 });

@@ -1,7 +1,7 @@
 export type DiffHunk =
   | { op: 'unchanged'; value: string }
-  | { op: 'removed';   value: string }
-  | { op: 'added';     value: string };
+  | { op: 'removed'; value: string }
+  | { op: 'added'; value: string };
 
 /**
  * Word-level diff between two strings.
@@ -16,21 +16,28 @@ export function diffStrings(original: string, edited: string): DiffHunk[] {
   // Build LCS table
   const m = a.length;
   const n = b.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array(n + 1).fill(0)
+  );
 
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1] + 1
+          : Math.max(dp[i - 1][j], dp[i][j - 1]);
     }
   }
 
   // Backtrack
   const hunks: DiffHunk[] = [];
-  let i = m, j = n;
+  let i = m,
+    j = n;
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
       hunks.unshift({ op: 'unchanged', value: a[i - 1] });
-      i--; j--;
+      i--;
+      j--;
     } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
       hunks.unshift({ op: 'added', value: b[j - 1] });
       j--;

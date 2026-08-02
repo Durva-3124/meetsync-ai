@@ -18,9 +18,11 @@ import {
 export const processAudioTranscription = async (
   meetingId: string,
   fileBuffer: Buffer,
-  mimetype: string,
+  mimetype: string
 ): Promise<void> => {
-  await Meeting.findByIdAndUpdate(meetingId, { processingStatus: 'processing' });
+  await Meeting.findByIdAndUpdate(meetingId, {
+    processingStatus: 'processing',
+  });
 
   try {
     const { transcript } = await transcribeAudio(fileBuffer, mimetype);
@@ -28,25 +30,39 @@ export const processAudioTranscription = async (
     const meeting = await Meeting.findByIdAndUpdate(
       meetingId,
       { transcript, processingStatus: 'completed' },
-      { new: true, returnDocument: 'after' },
-    ).populate<{ participants: { _id: string; name: string; email: string; skills: string[] }[] }>(
-      'participants',
-      'name email skills',
-    );
+      { new: true, returnDocument: 'after' }
+    ).populate<{
+      participants: {
+        _id: string;
+        name: string;
+        email: string;
+        skills: string[];
+      }[];
+    }>('participants', 'name email skills');
 
     if (!meeting) return;
 
-    const participants = meeting.participants as { _id: string; name: string; email: string; skills: string[] }[];
+    const participants = meeting.participants as {
+      _id: string;
+      name: string;
+      email: string;
+      skills: string[];
+    }[];
 
     // ── Phase 1: all independent extractions in parallel ────────────────────
-    const [momResult, decisionsResult, actionItemsResult, deadlinesResult, insightsResult] =
-      await Promise.allSettled([
-        generateMom(transcript, meeting.title),
-        extractDecisions(transcript),
-        extractActionItems(transcript),
-        extractDeadlines(transcript),
-        getMeetingInsights(transcript, {}),
-      ]);
+    const [
+      momResult,
+      decisionsResult,
+      actionItemsResult,
+      deadlinesResult,
+      insightsResult,
+    ] = await Promise.allSettled([
+      generateMom(transcript, meeting.title),
+      extractDecisions(transcript),
+      extractActionItems(transcript),
+      extractDeadlines(transcript),
+      getMeetingInsights(transcript, {}),
+    ]);
 
     // Persist MoM
     if (momResult.status === 'fulfilled') {
@@ -54,7 +70,7 @@ export const processAudioTranscription = async (
       await Mom.findOneAndUpdate(
         { meetingId },
         { meetingId, agenda, discussionPoints, summary },
-        { upsert: true, returnDocument: 'after' },
+        { upsert: true, returnDocument: 'after' }
       );
     } else {
       console.error(`[MoM] meetingId=${meetingId}`, momResult.reason);
@@ -68,7 +84,10 @@ export const processAudioTranscription = async (
         await Decision.insertMany(decisions.map((d) => ({ ...d, meetingId })));
       }
     } else {
-      console.error(`[Decisions] meetingId=${meetingId}`, decisionsResult.reason);
+      console.error(
+        `[Decisions] meetingId=${meetingId}`,
+        decisionsResult.reason
+      );
     }
 
     // Persist Deadlines
@@ -83,11 +102,14 @@ export const processAudioTranscription = async (
             assignee: d.assignee,
             deadline: new Date(d.deadline),
             rawText: d.rawText,
-          })),
+          }))
         );
       }
     } else {
-      console.error(`[Deadlines] meetingId=${meetingId}`, deadlinesResult.reason);
+      console.error(
+        `[Deadlines] meetingId=${meetingId}`,
+        deadlinesResult.reason
+      );
     }
 
     // ── Phase 2: per-action-item skill-match (concurrent) ───────────────────
@@ -95,14 +117,17 @@ export const processAudioTranscription = async (
       const { actionItems } = actionItemsResult.value;
 
       const skillResults = await Promise.allSettled(
-        actionItems.map((item) => matchSkill(item.task, item.assignee, participants)),
+        actionItems.map((item) =>
+          matchSkill(item.task, item.assignee, participants)
+        )
       );
 
       await Task.deleteMany({ meetingId });
 
       const taskDocs = actionItems.map((item, i) => {
         const skillResult = skillResults[i];
-        const skillData = skillResult.status === 'fulfilled' ? skillResult.value : null;
+        const skillData =
+          skillResult.status === 'fulfilled' ? skillResult.value : null;
 
         if (skillResult.status === 'rejected') {
           console.error(`[SkillMatch] task="${item.task}"`, skillResult.reason);
@@ -110,7 +135,9 @@ export const processAudioTranscription = async (
 
         let matchedUserId: string | undefined;
         if (skillData?.matchedUserId) {
-          const matched = participants.find((p) => p._id.toString() === skillData.matchedUserId);
+          const matched = participants.find(
+            (p) => p._id.toString() === skillData.matchedUserId
+          );
           matchedUserId = matched?._id.toString();
         }
 
@@ -131,12 +158,17 @@ export const processAudioTranscription = async (
         await Task.insertMany(taskDocs);
       }
     } else {
-      console.error(`[ActionItems] meetingId=${meetingId}`, actionItemsResult.reason);
+      console.error(
+        `[ActionItems] meetingId=${meetingId}`,
+        actionItemsResult.reason
+      );
     }
 
     // ── Phase 3: effectiveness score — needs decisions + keyPoints + talkTime ─
     const decisions =
-      decisionsResult.status === 'fulfilled' ? decisionsResult.value.decisions : [];
+      decisionsResult.status === 'fulfilled'
+        ? decisionsResult.value.decisions
+        : [];
     const keyPoints =
       momResult.status === 'fulfilled' ? momResult.value.agenda : [];
     const talkTime =
@@ -153,11 +185,15 @@ export const processAudioTranscription = async (
     }
 
     try {
-      const scoreData = await scoreEffectiveness({ decisions, keyPoints, talkTime });
+      const scoreData = await scoreEffectiveness({
+        decisions,
+        keyPoints,
+        talkTime,
+      });
       await EffectivenessScore.findOneAndUpdate(
         { meetingId },
         { meetingId, ...scoreData },
-        { upsert: true, returnDocument: 'after' },
+        { upsert: true, returnDocument: 'after' }
       );
     } catch (err) {
       console.error(`[EffectivenessScore] meetingId=${meetingId}`, err);

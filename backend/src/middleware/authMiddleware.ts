@@ -12,10 +12,12 @@ export interface AuthRequest extends Request {
 export const requireAuth = (
   req: AuthRequest,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ): void => {
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : undefined;
 
   if (!token) {
     res.status(401).json({ message: 'Authentication required' });
@@ -35,7 +37,9 @@ export const requireAuth = (
   }
 };
 
-export const requireRole = (...roles: Array<'employee' | 'reviewer' | 'admin'>) => {
+export const requireRole = (
+  ...roles: Array<'employee' | 'reviewer' | 'admin'>
+) => {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ message: 'Authentication required' });

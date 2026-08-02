@@ -56,15 +56,16 @@ function noBorder() {
 // ── DOCX builder ──────────────────────────────────────────────────────────────
 
 async function buildDocx(jobId: string, meetingId: string): Promise<string> {
-  const [meeting, mom, decisions, tasks, deadlines, score, latestReview] = await Promise.all([
-    Meeting.findById(meetingId),
-    Mom.findOne({ meetingId }),
-    Decision.find({ meetingId }).sort({ createdAt: 1 }),
-    Task.find({ meetingId }).sort({ createdAt: 1 }),
-    Deadline.find({ meetingId }).sort({ deadline: 1 }),
-    EffectivenessScore.findOne({ meetingId }),
-    ReviewVersion.findOne({ meetingId }).sort({ version: -1 }),
-  ]);
+  const [meeting, mom, decisions, tasks, deadlines, score, latestReview] =
+    await Promise.all([
+      Meeting.findById(meetingId),
+      Mom.findOne({ meetingId }),
+      Decision.find({ meetingId }).sort({ createdAt: 1 }),
+      Task.find({ meetingId }).sort({ createdAt: 1 }),
+      Deadline.find({ meetingId }).sort({ deadline: 1 }),
+      EffectivenessScore.findOne({ meetingId }),
+      ReviewVersion.findOne({ meetingId }).sort({ version: -1 }),
+    ]);
 
   const markerMap = new Map<string, IAuditMarker>();
   if (latestReview) {
@@ -79,10 +80,18 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
   }
 
   const h1 = (text: string) =>
-    new Paragraph({ text, heading: HeadingLevel.HEADING_1, spacing: { after: 120 } });
+    new Paragraph({
+      text,
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 120 },
+    });
 
   const h2 = (text: string) =>
-    new Paragraph({ text, heading: HeadingLevel.HEADING_2, spacing: { after: 80 } });
+    new Paragraph({
+      text,
+      heading: HeadingLevel.HEADING_2,
+      spacing: { after: 80 },
+    });
 
   const body = (text: string, italic = false) =>
     new Paragraph({
@@ -95,7 +104,14 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
     const color = marker.source === 'manual' ? 'C0392B' : '2980B9';
     return [
       new Paragraph({
-        children: [new TextRun({ text: auditTag(marker), color, size: 18, italics: true })],
+        children: [
+          new TextRun({
+            text: auditTag(marker),
+            color,
+            size: 18,
+            italics: true,
+          }),
+        ],
         spacing: { after: 40 },
       }),
     ];
@@ -106,13 +122,19 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
   // Title block
   children.push(
     new Paragraph({
-      children: [new TextRun({ text: meeting?.title ?? 'Meeting Report', bold: true, size: 48 })],
+      children: [
+        new TextRun({
+          text: meeting?.title ?? 'Meeting Report',
+          bold: true,
+          size: 48,
+        }),
+      ],
       heading: HeadingLevel.TITLE,
       spacing: { after: 200 },
     }),
     body(`Date: ${meeting?.scheduledAt?.toISOString().slice(0, 10) ?? 'N/A'}`),
     body(`Export generated: ${new Date().toISOString()}`),
-    body(`Meeting ID: ${meetingId}`),
+    body(`Meeting ID: ${meetingId}`)
   );
 
   // MoM
@@ -132,7 +154,9 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
 
     if (mom.discussionPoints.length) {
       children.push(h2('Discussion Points'));
-      mom.discussionPoints.forEach((dp) => children.push(body(`[${dp.speaker}] ${dp.point}`)));
+      mom.discussionPoints.forEach((dp) =>
+        children.push(body(`[${dp.speaker}] ${dp.point}`))
+      );
     }
   }
 
@@ -142,10 +166,14 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
     decisions.forEach((d, i) => {
       const decMarker = markerMap.get(`decisions[${i}].decision`);
       const ratMarker = markerMap.get(`decisions[${i}].rationale`);
-      children.push(body(`${i + 1}. ${d.decision}${auditTag(decMarker)} — by ${d.madeBy}`));
+      children.push(
+        body(`${i + 1}. ${d.decision}${auditTag(decMarker)} — by ${d.madeBy}`)
+      );
       children.push(...auditPara(decMarker));
       if (d.rationale) {
-        children.push(body(`   Rationale: ${d.rationale}${auditTag(ratMarker)}`, true));
+        children.push(
+          body(`   Rationale: ${d.rationale}${auditTag(ratMarker)}`, true)
+        );
         children.push(...auditPara(ratMarker));
       }
     });
@@ -159,9 +187,13 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
         children: ['Task', 'Assignee', 'Due Date', 'Status'].map(
           (h) =>
             new TableCell({
-              children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })],
+              children: [
+                new Paragraph({
+                  children: [new TextRun({ text: h, bold: true })],
+                }),
+              ],
               borders: noBorder(),
-            }),
+            })
         ),
         tableHeader: true,
       }),
@@ -169,19 +201,29 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
         (t) =>
           new TableRow({
             children: [t.task, t.assignee, t.dueDate ?? '—', t.status].map(
-              (v) => new TableCell({ children: [new Paragraph(v)], borders: noBorder() }),
+              (v) =>
+                new TableCell({
+                  children: [new Paragraph(v)],
+                  borders: noBorder(),
+                })
             ),
-          }),
+          })
       ),
     ];
-    children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+    children.push(
+      new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } })
+    );
   }
 
   // Deadlines
   if (deadlines.length) {
     children.push(h1('Deadlines'));
     deadlines.forEach((dl) =>
-      children.push(body(`• ${dl.description} — ${dl.assignee} by ${dl.deadline.toISOString().slice(0, 10)}`)),
+      children.push(
+        body(
+          `• ${dl.description} — ${dl.assignee} by ${dl.deadline.toISOString().slice(0, 10)}`
+        )
+      )
     );
   }
 
@@ -191,8 +233,8 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
     children.push(body(`Overall: ${score.score}/100`));
     children.push(
       body(
-        `Decisions: ${score.breakdown.decisionsScore}  |  Key Points: ${score.breakdown.keyPointsCoverage}  |  Participation: ${score.breakdown.participationBalance}`,
-      ),
+        `Decisions: ${score.breakdown.decisionsScore}  |  Key Points: ${score.breakdown.keyPointsCoverage}  |  Participation: ${score.breakdown.participationBalance}`
+      )
     );
     if (score.suggestions.length) {
       children.push(h2('Suggestions'));
@@ -203,9 +245,17 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
   // Audit trail summary
   if (latestReview) {
     children.push(h1('Audit Trail'));
-    children.push(body(`Review version: ${latestReview.version}  |  Locked: ${latestReview.locked}`));
+    children.push(
+      body(
+        `Review version: ${latestReview.version}  |  Locked: ${latestReview.locked}`
+      )
+    );
     latestReview.fields.forEach((f) =>
-      children.push(body(`  ${f.field}: ${f.source === 'manual' ? '✎ manually edited' : '✓ ai-generated'}`)),
+      children.push(
+        body(
+          `  ${f.field}: ${f.source === 'manual' ? '✎ manually edited' : '✓ ai-generated'}`
+        )
+      )
     );
   }
 
@@ -219,15 +269,16 @@ async function buildDocx(jobId: string, meetingId: string): Promise<string> {
 // ── PDF builder ───────────────────────────────────────────────────────────────
 
 async function buildPdf(jobId: string, meetingId: string): Promise<string> {
-  const [meeting, mom, decisions, tasks, deadlines, score, latestReview] = await Promise.all([
-    Meeting.findById(meetingId),
-    Mom.findOne({ meetingId }),
-    Decision.find({ meetingId }).sort({ createdAt: 1 }),
-    Task.find({ meetingId }).sort({ createdAt: 1 }),
-    Deadline.find({ meetingId }).sort({ deadline: 1 }),
-    EffectivenessScore.findOne({ meetingId }),
-    ReviewVersion.findOne({ meetingId }).sort({ version: -1 }),
-  ]);
+  const [meeting, mom, decisions, tasks, deadlines, score, latestReview] =
+    await Promise.all([
+      Meeting.findById(meetingId),
+      Mom.findOne({ meetingId }),
+      Decision.find({ meetingId }).sort({ createdAt: 1 }),
+      Task.find({ meetingId }).sort({ createdAt: 1 }),
+      Deadline.find({ meetingId }).sort({ deadline: 1 }),
+      EffectivenessScore.findOne({ meetingId }),
+      ReviewVersion.findOne({ meetingId }).sort({ version: -1 }),
+    ]);
 
   const markerMap = new Map<string, IAuditMarker>();
   if (latestReview) {
@@ -269,12 +320,16 @@ async function buildPdf(jobId: string, meetingId: string): Promise<string> {
     html += `<h1>Minutes of Meeting</h1><h2>Summary</h2><p>${esc(mom.summary)}${auditSpan(markerMap.get('summary'))}</p>`;
     if (mom.agenda.length) {
       html += `<h2>Agenda</h2><ol>`;
-      mom.agenda.forEach((a) => { html += `<li>${esc(a)}</li>`; });
+      mom.agenda.forEach((a) => {
+        html += `<li>${esc(a)}</li>`;
+      });
       html += `</ol>${auditSpan(markerMap.get('agenda'))}`;
     }
     if (mom.discussionPoints.length) {
       html += `<h2>Discussion Points</h2><ul>`;
-      mom.discussionPoints.forEach((dp) => { html += `<li><b>${esc(dp.speaker)}:</b> ${esc(dp.point)}</li>`; });
+      mom.discussionPoints.forEach((dp) => {
+        html += `<li><b>${esc(dp.speaker)}:</b> ${esc(dp.point)}</li>`;
+      });
       html += `</ul>`;
     }
   }
@@ -312,7 +367,9 @@ async function buildPdf(jobId: string, meetingId: string): Promise<string> {
     html += `<p>Decisions: ${score.breakdown.decisionsScore} | Key Points: ${score.breakdown.keyPointsCoverage} | Participation: ${score.breakdown.participationBalance}</p>`;
     if (score.suggestions.length) {
       html += `<h2>Suggestions</h2><ul>`;
-      score.suggestions.forEach((s) => { html += `<li>${esc(s)}</li>`; });
+      score.suggestions.forEach((s) => {
+        html += `<li>${esc(s)}</li>`;
+      });
       html += `</ul>`;
     }
   }
@@ -329,7 +386,9 @@ async function buildPdf(jobId: string, meetingId: string): Promise<string> {
 
   html += `</body></html>`;
 
-  const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  const browser = await puppeteer.launch({
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'load' });
@@ -368,11 +427,14 @@ export function startExportWorker() {
         await ExportJob.findByIdAndUpdate(jobId, { status: 'done', filePath });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        await ExportJob.findByIdAndUpdate(jobId, { status: 'failed', errorMessage: msg });
+        await ExportJob.findByIdAndUpdate(jobId, {
+          status: 'failed',
+          errorMessage: msg,
+        });
         throw err;
       }
     },
-    { connection },
+    { connection }
   );
 
   worker.on('failed', (job, err) => {

@@ -4,10 +4,6 @@ import mongoose from 'mongoose';
 import { connectDB } from '../config/db.js';
 import { breaker1, breaker2 } from './ai/resilience.js';
 import { AiServiceError } from './ai/aiError.js';
-import { Mom } from '../models/Mom.js';
-import { Decision } from '../models/Decision.js';
-import { Task } from '../models/Task.js';
-import { Deadline } from '../models/Deadline.js';
 import { EffectivenessScore } from '../models/EffectivenessScore.js';
 import { Meeting } from '../models/Meeting.js';
 import { User } from '../models/User.js';
@@ -69,7 +65,12 @@ describe('AI resilience — circuit breaker isolation', async () => {
   });
 
   it('AiServiceError marks circuitOpen=true when breaker is open', () => {
-    const err = new AiServiceError('ai-2', '/internal/ai/skill-match', null, true);
+    const err = new AiServiceError(
+      'ai-2',
+      '/internal/ai/skill-match',
+      null,
+      true
+    );
     assert.equal(err.circuitOpen, true);
     assert.equal(err.statusCode, null);
     assert.match(err.message, /circuit open/);
@@ -89,7 +90,7 @@ describe('AI resilience — circuit breaker isolation', async () => {
 
     // Fire volumeThreshold failures to trip the breaker
     const attempts = Array.from({ length: 5 }, () =>
-      breaker2.fire(failingThunk).catch(() => null),
+      breaker2.fire(failingThunk).catch(() => null)
     );
     await Promise.all(attempts);
 
@@ -107,7 +108,7 @@ describe('AI resilience — circuit breaker isolation', async () => {
   it('opening breaker1 does not affect breaker2', async () => {
     const failingThunk = () => Promise.reject(new Error('ai-1 down'));
     const attempts = Array.from({ length: 5 }, () =>
-      breaker1.fire(failingThunk).catch(() => null),
+      breaker1.fire(failingThunk).catch(() => null)
     );
     await Promise.all(attempts);
 
@@ -124,7 +125,9 @@ describe('AI resilience — circuit breaker isolation', async () => {
     // Force breaker2 open
     const failingThunk = () => Promise.reject(new Error('ai-2 down'));
     await Promise.all(
-      Array.from({ length: 5 }, () => breaker2.fire(failingThunk).catch(() => null)),
+      Array.from({ length: 5 }, () =>
+        breaker2.fire(failingThunk).catch(() => null)
+      )
     );
     assert.equal(breaker2.opened, true);
 
@@ -136,16 +139,39 @@ describe('AI resilience — circuit breaker isolation', async () => {
     const { Deadline: DeadlineModel } = await import('../models/Deadline.js');
 
     // AI-1 calls succeed (mocked directly)
-    const momData = { agenda: ['item1'], discussionPoints: [], summary: 'test summary' };
+    const momData = {
+      agenda: ['item1'],
+      discussionPoints: [],
+      summary: 'test summary',
+    };
     const decisionsData = [{ decision: 'Use Redis', madeBy: 'SPEAKER_00' }];
-    const deadlinesData = [{ description: 'Submit PR', assignee: 'Alice', deadline: new Date().toISOString(), rawText: 'raw' }];
+    const deadlinesData = [
+      {
+        description: 'Submit PR',
+        assignee: 'Alice',
+        deadline: new Date().toISOString(),
+        rawText: 'raw',
+      },
+    ];
 
     // Persist AI-1 results
-    await MomModel.findOneAndUpdate({ meetingId }, { meetingId, ...momData }, { upsert: true, returnDocument: 'after' });
+    await MomModel.findOneAndUpdate(
+      { meetingId },
+      { meetingId, ...momData },
+      { upsert: true, returnDocument: 'after' }
+    );
     await DecisionModel.deleteMany({ meetingId });
-    await DecisionModel.insertMany(decisionsData.map((d) => ({ ...d, meetingId })));
+    await DecisionModel.insertMany(
+      decisionsData.map((d) => ({ ...d, meetingId }))
+    );
     await DeadlineModel.deleteMany({ meetingId });
-    await DeadlineModel.insertMany(deadlinesData.map((d) => ({ ...d, meetingId, deadline: new Date(d.deadline) })));
+    await DeadlineModel.insertMany(
+      deadlinesData.map((d) => ({
+        ...d,
+        meetingId,
+        deadline: new Date(d.deadline),
+      }))
+    );
 
     // AI-2 calls fail (breaker open) — simulate what Promise.allSettled does
     const ai2Result = await breaker2.fire(failingThunk).catch((e: Error) => e);

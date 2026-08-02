@@ -26,10 +26,10 @@ export async function scheduleDeadlineReminders(): Promise<void> {
   await scheduler.upsertJobScheduler(
     DEADLINE_REMINDER_JOB,
     { pattern: '0 8 * * *' }, // every day at 08:00
-    DEADLINE_REMINDER_JOB,    // jobName
-    {},                       // jobData
-    {},                       // opts
-    { override: false },      // don't reset if already scheduled
+    DEADLINE_REMINDER_JOB, // jobName
+    {}, // jobData
+    {}, // opts
+    { override: false } // don't reset if already scheduled
   );
   await scheduler.close();
 }
@@ -51,8 +51,12 @@ export function startDeadlineReminderWorker() {
       if (!upcoming.length) return;
 
       // Batch-load meetings and users referenced by these deadlines
-      const meetingIds = [...new Set(upcoming.map((d) => d.meetingId.toString()))];
-      const meetings = await Meeting.find({ _id: { $in: meetingIds } }).select('title participants createdBy');
+      const meetingIds = [
+        ...new Set(upcoming.map((d) => d.meetingId.toString())),
+      ];
+      const meetings = await Meeting.find({ _id: { $in: meetingIds } }).select(
+        'title participants createdBy'
+      );
 
       const meetingMap = new Map(meetings.map((m) => [m._id.toString(), m]));
 
@@ -63,7 +67,9 @@ export function startDeadlineReminderWorker() {
         m.participants.forEach((p) => userIds.add(p.toString()));
       });
 
-      const users = await User.find({ _id: { $in: [...userIds] } }).select('name email');
+      const users = await User.find({ _id: { $in: [...userIds] } }).select(
+        'name email'
+      );
       const userMap = new Map(users.map((u) => [u._id.toString(), u]));
 
       // Send one reminder per deadline to the matched user (by assignee name match)
@@ -74,7 +80,7 @@ export function startDeadlineReminderWorker() {
         // Find a user whose name matches the assignee (case-insensitive)
         const assigneeLower = dl.assignee.toLowerCase();
         const user = [...userMap.values()].find(
-          (u) => u.name.toLowerCase() === assigneeLower,
+          (u) => u.name.toLowerCase() === assigneeLower
         );
         if (!user) return; // no matched user — skip silently
 
@@ -89,17 +95,23 @@ export function startDeadlineReminderWorker() {
             meetingId: dl.meetingId.toString(),
           });
         } catch (err) {
-          console.error(`[deadline-reminder] failed for deadline ${dl._id}:`, err);
+          console.error(
+            `[deadline-reminder] failed for deadline ${dl._id}:`,
+            err
+          );
         }
       });
 
       await Promise.allSettled(sends);
     },
-    { connection },
+    { connection }
   );
 
   worker.on('failed', (job, err) => {
-    console.error(`[deadline-reminder-worker] job ${job?.id} failed:`, err.message);
+    console.error(
+      `[deadline-reminder-worker] job ${job?.id} failed:`,
+      err.message
+    );
   });
 
   return worker;

@@ -26,11 +26,16 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
   }
 
   if (meeting.processingStatus !== 'completed') {
-    res.status(409).json({ message: 'Decisions not available yet', processingStatus: meeting.processingStatus });
+    res.status(409).json({
+      message: 'Decisions not available yet',
+      processingStatus: meeting.processingStatus,
+    });
     return;
   }
 
-  const decisions = await Decision.find({ meetingId: req.params.id }).sort({ createdAt: 1 });
+  const decisions = await Decision.find({ meetingId: req.params.id }).sort({
+    createdAt: 1,
+  });
 
   res.json({ decisions });
 });

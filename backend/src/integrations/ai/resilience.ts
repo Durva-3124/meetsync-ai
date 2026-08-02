@@ -34,21 +34,21 @@ function makeInstance(baseURL: string): AxiosInstance {
 // One breaker per service so AI-2 failures never trip AI-1's breaker
 
 const BREAKER_OPTIONS: CircuitBreaker.Options = {
-  timeout: 30_000,          // call must complete within 30 s
+  timeout: 30_000, // call must complete within 30 s
   errorThresholdPercentage: 50, // open after 50 % failures in the rolling window
-  resetTimeout: 30_000,     // half-open probe after 30 s
-  volumeThreshold: 3,       // need at least 3 calls before tripping
+  resetTimeout: 30_000, // half-open probe after 30 s
+  volumeThreshold: 3, // need at least 3 calls before tripping
 };
 
 function makeBreaker(
-  name: string,
+  name: string
 ): CircuitBreaker<[() => Promise<unknown>], unknown> {
   const fn = (thunk: () => Promise<unknown>) => thunk();
   const breaker = new CircuitBreaker(fn, { ...BREAKER_OPTIONS, name });
 
-  breaker.on('open',     () => console.warn(`[circuit] ${name} OPEN`));
+  breaker.on('open', () => console.warn(`[circuit] ${name} OPEN`));
   breaker.on('halfOpen', () => console.info(`[circuit] ${name} HALF-OPEN`));
-  breaker.on('close',    () => console.info(`[circuit] ${name} CLOSED`));
+  breaker.on('close', () => console.info(`[circuit] ${name} CLOSED`));
 
   return breaker;
 }
@@ -56,10 +56,10 @@ function makeBreaker(
 // ── Exported instances ────────────────────────────────────────────────────────
 
 export const ai1 = makeInstance(
-  process.env['AI_SERVICE_1_URL'] ?? 'http://localhost:8001',
+  process.env['AI_SERVICE_1_URL'] ?? 'http://localhost:8001'
 );
 export const ai2 = makeInstance(
-  process.env['AI_SERVICE_2_URL'] ?? 'http://localhost:8002',
+  process.env['AI_SERVICE_2_URL'] ?? 'http://localhost:8002'
 );
 
 export const breaker1 = makeBreaker('ai-1');

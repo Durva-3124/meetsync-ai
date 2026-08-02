@@ -11,7 +11,9 @@ function getTransporter(): nodemailer.Transporter {
       host: env.SMTP_HOST,
       port: env.SMTP_PORT,
       secure: env.SMTP_PORT === 465,
-      auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined,
+      auth: env.SMTP_USER
+        ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
+        : undefined,
     });
   }
   return _transporter;
@@ -40,7 +42,9 @@ export interface DeadlineReminderPayload {
   meetingId: string;
 }
 
-export async function sendTaskNotification(p: TaskNotificationPayload): Promise<void> {
+export async function sendTaskNotification(
+  p: TaskNotificationPayload
+): Promise<void> {
   const spanNote = p.sourceSpan
     ? `\n\nSource excerpt (${p.sourceSpan.start}s–${p.sourceSpan.end}s): "${p.sourceSpan.text}"`
     : '';
@@ -77,9 +81,11 @@ export async function sendTaskNotification(p: TaskNotificationPayload): Promise<
   });
 }
 
-export async function sendDeadlineReminder(p: DeadlineReminderPayload): Promise<void> {
+export async function sendDeadlineReminder(
+  p: DeadlineReminderPayload
+): Promise<void> {
   const daysLeft = Math.ceil(
-    (p.deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    (p.deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   );
   const dueStr = p.deadline.toISOString().slice(0, 10);
 

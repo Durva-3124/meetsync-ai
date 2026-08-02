@@ -15,7 +15,12 @@ export interface IEffectivenessScore extends Document {
 
 const effectivenessScoreSchema = new Schema<IEffectivenessScore>(
   {
-    meetingId: { type: Schema.Types.ObjectId, ref: 'Meeting', required: true, unique: true },
+    meetingId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Meeting',
+      required: true,
+      unique: true,
+    },
     score: { type: Number, required: true, min: 0, max: 100 },
     breakdown: {
       decisionsScore: { type: Number, required: true },
@@ -24,7 +29,10 @@ const effectivenessScoreSchema = new Schema<IEffectivenessScore>(
     },
     suggestions: { type: [String], default: [] },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
-export const EffectivenessScore = model<IEffectivenessScore>('EffectivenessScore', effectivenessScoreSchema);
+export const EffectivenessScore = model<IEffectivenessScore>(
+  'EffectivenessScore',
+  effectivenessScoreSchema
+);

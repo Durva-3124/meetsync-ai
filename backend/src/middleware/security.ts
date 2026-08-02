@@ -7,13 +7,19 @@ import { env } from '../config/env.js';
 // ── CORS ──────────────────────────────────────────────────────────────────────
 
 const allowedOrigins = new Set(
-  env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean),
+  env.ALLOWED_ORIGINS.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean)
 );
 
 export const corsMiddleware = cors({
   origin: (origin, cb) => {
     // Allow server-to-server / curl in non-production; always allow listed origins
-    if (!origin || allowedOrigins.has(origin) || env.NODE_ENV !== 'production') {
+    if (
+      !origin ||
+      allowedOrigins.has(origin) ||
+      env.NODE_ENV !== 'production'
+    ) {
       cb(null, true);
     } else {
       cb(new Error(`CORS: origin ${origin} not allowed`));
@@ -61,7 +67,9 @@ export const authRateLimit = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: 'Too many authentication attempts, please try again later' },
+  message: {
+    message: 'Too many authentication attempts, please try again later',
+  },
 });
 
 // ── Mongo sanitize ────────────────────────────────────────────────────────────
@@ -69,7 +77,11 @@ export const authRateLimit = rateLimit({
 // We apply it manually to only body and params; query is protected by Zod validateQuery.
 import { sanitize } from 'express-mongo-sanitize';
 
-export const mongoSanitizeMiddleware: express.RequestHandler = (req, _res, next) => {
+export const mongoSanitizeMiddleware: express.RequestHandler = (
+  req,
+  _res,
+  next
+) => {
   if (req.body) req.body = sanitize(req.body);
   if (req.params) req.params = sanitize(req.params) as Record<string, string>;
   next();

@@ -3,7 +3,7 @@ import { env } from './env.js';
 
 export const formatMongoStartupError = (
   uri: string,
-  error: unknown,
+  error: unknown
 ): string => {
   const message = error instanceof Error ? error.message : String(error);
 
