@@ -1,6 +1,11 @@
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 WORKDIR /app
+
+# Whisper uses FFmpeg to decode common audio formats.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
