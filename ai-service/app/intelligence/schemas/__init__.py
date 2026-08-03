@@ -7,12 +7,16 @@ from app.intelligence.schemas.transcript import (
     EmbeddingResponse,
     Transcript,
     TranscribeRequest,
+    EmbeddingText,
+    SegmentEmbedding,
 )
 
 __all__ = [
     "DiarizeRequest",
     "EmbeddingRequest",
     "EmbeddingResponse",
+    "EmbeddingText",
+    "SegmentEmbedding",
     "HealthResponse",
     "Transcript",
     "TranscribeRequest",
