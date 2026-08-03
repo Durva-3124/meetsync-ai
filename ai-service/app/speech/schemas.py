@@ -24,3 +24,9 @@ class TranscriptionResponse(BaseModel):
 
     status: Literal["pending"]
     transcript: str | None = None
+
+
+class HealthResponse(BaseModel):
+    """Standard health-check response for the speech service."""
+
+    status: Literal["ok"]

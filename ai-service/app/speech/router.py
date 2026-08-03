@@ -2,9 +2,18 @@
 
 from fastapi import APIRouter, status
 
-from app.speech.schemas import TranscriptionRequest, TranscriptionResponse
+from app.speech.schemas import HealthResponse, TranscriptionRequest, TranscriptionResponse
 
-speech_router = APIRouter(tags=["speech"])
+speech_router = APIRouter(prefix="/speech", tags=["speech"])
+
+
+@speech_router.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Check speech service health",
+)
+async def speech_health_check() -> HealthResponse:
+    return HealthResponse(status="ok")
 
 
 @speech_router.post(
