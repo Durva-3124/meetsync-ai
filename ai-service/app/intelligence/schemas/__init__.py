@@ -2,6 +2,9 @@
 
 from app.intelligence.schemas.health import HealthResponse
 from app.intelligence.schemas.transcript import (
+    DecisionLog,
+    DecisionLogEntry,
+    DecisionSourceSpan,
     DiarizeRequest,
     EmbeddingRequest,
     EmbeddingResponse,
@@ -12,6 +15,9 @@ from app.intelligence.schemas.transcript import (
 )
 
 __all__ = [
+    "DecisionLog",
+    "DecisionLogEntry",
+    "DecisionSourceSpan",
     "DiarizeRequest",
     "EmbeddingRequest",
     "EmbeddingResponse",
