@@ -40,6 +40,7 @@ does not return a confidence score.
 | `POST /intelligence/transcribe` | `{ "audio_url": "https://…", "language": "en" }` | `Transcript` with text and timestamped segments; `speaker` is null. |
 | `POST /intelligence/diarize` | `{ "transcript": Transcript }` | `Transcript` with each segment's `speaker` populated when detected. |
 | `POST /intelligence/embed` | `{ "transcript_id": "uuid", "texts": [{ "segment_id": "seg_0001", "text": "…" }] }` | `{ "model": "sentence-transformers/all-MiniLM-L6-v2", "dimension": 384, "embeddings": [{ "segment_id": "seg_0001", "vector": [0.0] }] }`. |
+| `POST /intelligence/decision-log` | `{ "transcript_id": "uuid", "decisions": [{ "decision_id": "dec_001", "decision_text": "…", "reasoning": "…", "source_span": { "transcript_id": "uuid", "segment_id": "seg_0001", "start_seconds": 0.0, "end_seconds": 5.0, "text": "…", "speaker": "SPEAKER_00", "character_start": 0, "character_end": 25 }, "confidence": 0.93 }] }` | `DecisionLog` with one or more decision entries, source spans, and confidence scores. |
 
 ## Model decision
 
