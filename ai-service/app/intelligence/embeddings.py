@@ -6,14 +6,18 @@ from typing import Iterable, List, Tuple
 
 import numpy as np
 
-from sentence_transformers import SentenceTransformer
-
-
 _DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-_MODEL_CACHE: dict[str, SentenceTransformer] = {}
+_MODEL_CACHE: dict[str, object] = {}
+SentenceTransformer = None
 
 
-def get_embedding_model(model_name: str = _DEFAULT_MODEL, device: str = "cpu") -> SentenceTransformer:
+def get_embedding_model(model_name: str = _DEFAULT_MODEL, device: str = "cpu") -> object:
+    global SentenceTransformer
+    if SentenceTransformer is None:
+        from sentence_transformers import SentenceTransformer as _SentenceTransformer
+
+        SentenceTransformer = _SentenceTransformer
+
     cache_key = f"{model_name}@{device}"
     if cache_key not in _MODEL_CACHE:
         _MODEL_CACHE[cache_key] = SentenceTransformer(model_name, device=device)
