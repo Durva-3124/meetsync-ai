@@ -3,3 +3,10 @@ services:
     build: .
     ports:
       - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\"" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5

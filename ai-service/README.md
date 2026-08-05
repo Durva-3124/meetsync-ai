@@ -38,6 +38,17 @@ Run the container:
 docker run --rm -p 8000:8000 meetsync-ai-service
 ```
 
+
+## Docker Compose
+
+From the repository root, run:
+
+```powershell
+docker compose up --build
+```
+
+This uses `docker-compose.yml` and `docker-compose.override.yml` to build the AI service image and mount local source files for live editing.
+
 ## Endpoints
 
 - `GET /health`
