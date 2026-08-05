@@ -121,14 +121,9 @@ function normalizeDecisionEntry(
   }
 
   const source_span: DecisionSourceSpan = {
-    transcript_id: (span as Record<string, unknown>).transcript_id ??
-      transcriptId,
-    segment_id: String(
-      (span as Record<string, unknown>).segment_id ?? 'seg_unknown'
-    ),
-    start_seconds: Number(
-      (span as Record<string, unknown>).start_seconds ?? 0
-    ),
+    transcript_id: (span as Record<string, unknown>).transcript_id ?? transcriptId,
+    segment_id: String((span as Record<string, unknown>).segment_id ?? 'seg_unknown'),
+    start_seconds: Number((span as Record<string, unknown>).start_seconds ?? 0),
     end_seconds: Number((span as Record<string, unknown>).end_seconds ?? 0),
     text: String((span as Record<string, unknown>).text ?? ''),
     speaker: (span as Record<string, unknown>).speaker
@@ -161,13 +156,13 @@ function parseProviderOutput(
   if (!parsed || typeof parsed !== 'object' || !('decisions' in parsed))
     return [];
 
-  const decisions = Array.isArray(
-    (parsed as Record<string, unknown>).decisions
-  )
+  const decisions = Array.isArray((parsed as Record<string, unknown>).decisions)
     ? (parsed as Record<string, unknown>).decisions
     : [];
   return (decisions as unknown[])
-    .map((entry: unknown) => normalizeDecisionEntry(entry as Record<string, unknown>, transcriptId))
+    .map((entry: unknown) =>
+      normalizeDecisionEntry(entry as Record<string, unknown>, transcriptId)
+    )
     .filter((entry): entry is DecisionLogEntry => entry !== null);
 }
 
@@ -257,7 +252,10 @@ export async function extractDecisions(
   const providerResult = await callChatProvider(prompt);
 
   if (providerResult) {
-    const decisions = parseProviderOutput(providerResult.text, request.transcript_id);
+    const decisions = parseProviderOutput(
+      providerResult.text,
+      request.transcript_id
+    );
     if (decisions.length) {
       return {
         decisions,

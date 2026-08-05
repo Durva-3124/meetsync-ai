@@ -1,6 +1,8 @@
+version: "3.9"
 services:
   ai-service:
-    build: .
+    build:
+      context: ./ai-service
     ports:
       - "8000:8000"
     environment:
