@@ -34,11 +34,16 @@ export interface DecisionExtractionResponse {
 
 const DEFAULT_MAX_DECISIONS = 5;
 
-export function buildDecisionExtractionPrompt(request: DecisionExtractionRequest): string {
+export function buildDecisionExtractionPrompt(
+  request: DecisionExtractionRequest
+): string {
   const maxDecisions = request.max_decisions ?? DEFAULT_MAX_DECISIONS;
-  const hasTranscriptId = request.transcript_id ? `Transcript ID: ${request.transcript_id}\n` : '';
+  const hasTranscriptId = request.transcript_id
+    ? `Transcript ID: ${request.transcript_id}\n`
+    : '';
 
-  return [`You are an AI assistant that extracts structured decisions and reasoning from meeting or transcript text.
+  return [
+    `You are an AI assistant that extracts structured decisions and reasoning from meeting or transcript text.
 
 Return JSON only, with these fields for each decision:
 - decision_id: a stable identifier such as dec_<id>
@@ -73,7 +78,8 @@ Extract up to ${maxDecisions} decisions from the following text.
 ${hasTranscriptId}
 Text:
 ${request.text}
-`].join('');
+`,
+  ].join('');
 }
 
 function safeParseJson(text: string): unknown {
@@ -88,27 +94,54 @@ function createDecisionId(): string {
   return `dec_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 }
 
-function normalizeDecisionEntry(entry: any, transcriptId?: string): DecisionLogEntry | null {
+function normalizeDecisionEntry(
+  entry: Record<string, unknown>,
+  transcriptId?: string
+): DecisionLogEntry | null {
   if (!entry || typeof entry !== 'object') return null;
 
-  const decisionText = typeof entry.decision_text === 'string' ? entry.decision_text.trim() : undefined;
-  const reasoning = typeof entry.reasoning === 'string' ? entry.reasoning.trim() : undefined;
-  const confidence = typeof entry.confidence === 'number' ? entry.confidence : undefined;
+  const decisionText =
+    typeof entry.decision_text === 'string'
+      ? entry.decision_text.trim()
+      : undefined;
+  const reasoning =
+    typeof entry.reasoning === 'string' ? entry.reasoning.trim() : undefined;
+  const confidence =
+    typeof entry.confidence === 'number' ? entry.confidence : undefined;
   const span = entry.source_span;
 
-  if (!decisionText || !reasoning || confidence === undefined || !span || typeof span !== 'object') {
+  if (
+    !decisionText ||
+    !reasoning ||
+    confidence === undefined ||
+    !span ||
+    typeof span !== 'object'
+  ) {
     return null;
   }
 
   const source_span: DecisionSourceSpan = {
-    transcript_id: span.transcript_id ?? transcriptId,
-    segment_id: String(span.segment_id ?? 'seg_unknown'),
-    start_seconds: Number(span.start_seconds ?? 0),
-    end_seconds: Number(span.end_seconds ?? 0),
-    text: String(span.text ?? ''),
-    speaker: span.speaker ? String(span.speaker) : undefined,
-    character_start: span.character_start !== undefined ? Number(span.character_start) : undefined,
-    character_end: span.character_end !== undefined ? Number(span.character_end) : undefined,
+    transcript_id: (span as Record<string, unknown>).transcript_id ??
+      transcriptId,
+    segment_id: String(
+      (span as Record<string, unknown>).segment_id ?? 'seg_unknown'
+    ),
+    start_seconds: Number(
+      (span as Record<string, unknown>).start_seconds ?? 0
+    ),
+    end_seconds: Number((span as Record<string, unknown>).end_seconds ?? 0),
+    text: String((span as Record<string, unknown>).text ?? ''),
+    speaker: (span as Record<string, unknown>).speaker
+      ? String((span as Record<string, unknown>).speaker)
+      : undefined,
+    character_start:
+      (span as Record<string, unknown>).character_start !== undefined
+        ? Number((span as Record<string, unknown>).character_start)
+        : undefined,
+    character_end:
+      (span as Record<string, unknown>).character_end !== undefined
+        ? Number((span as Record<string, unknown>).character_end)
+        : undefined,
   };
 
   return {
@@ -120,30 +153,50 @@ function normalizeDecisionEntry(entry: any, transcriptId?: string): DecisionLogE
   };
 }
 
-function parseProviderOutput(raw: string, transcriptId?: string): DecisionLogEntry[] {
+function parseProviderOutput(
+  raw: string,
+  transcriptId?: string
+): DecisionLogEntry[] {
   const parsed = safeParseJson(raw);
-  if (!parsed || typeof parsed !== 'object' || !('decisions' in parsed)) return [];
+  if (!parsed || typeof parsed !== 'object' || !('decisions' in parsed))
+    return [];
 
-  const decisions = Array.isArray((parsed as any).decisions) ? (parsed as any).decisions : [];
-  return decisions
-    .map((entry: unknown) => normalizeDecisionEntry(entry, transcriptId))
+  const decisions = Array.isArray(
+    (parsed as Record<string, unknown>).decisions
+  )
+    ? (parsed as Record<string, unknown>).decisions
+    : [];
+  return (decisions as unknown[])
+    .map((entry: unknown) =>
+      normalizeDecisionEntry(entry as Record<string, unknown>, transcriptId)
+    )
     .filter((entry): entry is DecisionLogEntry => entry !== null);
 }
 
-function heuristicDecisionExtraction(request: DecisionExtractionRequest): DecisionLogEntry[] {
+function heuristicDecisionExtraction(
+  request: DecisionExtractionRequest
+): DecisionLogEntry[] {
   const text = request.text.trim();
   const sentences = text.split(/(?<=[.!?])\s+/g).filter(Boolean);
-  const candidates = sentences.filter((sentence) => /\b(should|will|must|decide|agree|action|plan|need|proposal|recommend)\b/i.test(sentence));
-  const decisions = candidates.slice(0, request.max_decisions ?? DEFAULT_MAX_DECISIONS);
+  const candidates = sentences.filter((sentence) =>
+    /\b(should|will|must|decide|agree|action|plan|need|proposal|recommend)\b/i.test(
+      sentence
+    )
+  );
+  const decisions = candidates.slice(
+    0,
+    request.max_decisions ?? DEFAULT_MAX_DECISIONS
+  );
 
   if (!decisions.length && sentences.length) {
     decisions.push(sentences[0]);
   }
 
-  return decisions.map((decision, index) => ({
+  return decisions.map((decision) => ({
     decision_id: createDecisionId(),
     decision_text: decision.replace(/\s+/g, ' ').trim(),
-    reasoning: 'Extracted from the provided transcript text using a lightweight fallback extractor.',
+    reasoning:
+      'Extracted from the provided transcript text using a lightweight fallback extractor.',
     source_span: {
       transcript_id: request.transcript_id,
       segment_id: request.source_spans?.[0]?.segment_id ?? 'seg_unknown',
@@ -158,7 +211,9 @@ function heuristicDecisionExtraction(request: DecisionExtractionRequest): Decisi
   }));
 }
 
-async function callChatProvider(prompt: string): Promise<{ text: string; provider: string } | undefined> {
+async function callChatProvider(
+  prompt: string
+): Promise<{ text: string; provider: string } | undefined> {
   if (process.env.OPENAI_API_KEY) {
     try {
       const OpenAI = (await import('openai')).OpenAI;
@@ -200,12 +255,17 @@ async function callChatProvider(prompt: string): Promise<{ text: string; provide
   return undefined;
 }
 
-export async function extractDecisions(request: DecisionExtractionRequest): Promise<DecisionExtractionResponse> {
+export async function extractDecisions(
+  request: DecisionExtractionRequest
+): Promise<DecisionExtractionResponse> {
   const prompt = buildDecisionExtractionPrompt(request);
   const providerResult = await callChatProvider(prompt);
 
   if (providerResult) {
-    const decisions = parseProviderOutput(providerResult.text, request.transcript_id);
+    const decisions = parseProviderOutput(
+      providerResult.text,
+      request.transcript_id
+    );
     if (decisions.length) {
       return {
         decisions,
