@@ -9,6 +9,13 @@ Repository for the Sprint 1 AI service and frontend/backend components.
 - Root `docker-compose.yml` for workspace-level service startup
 - Local override for live development via `docker compose`
 
+## Sprint 2 demo
+
+- New internal AI endpoint `POST /internal/ai/skill-match`
+- Ranked, justified candidate matching using skill embedding similarity plus workload penalty
+- Integration coverage for decision extraction and skill matching against sample transcript data
+- Demo-ready workflow for matching hiring and task assignment candidates from meeting decisions
+
 ## Run with Docker Compose
 
 From the repository root:
