@@ -121,10 +121,13 @@ function normalizeDecisionEntry(
   }
 
   const source_span: DecisionSourceSpan = {
-    transcript_id: typeof (span as Record<string, unknown>).transcript_id === 'string'
-      ? ((span as Record<string, unknown>).transcript_id as string)
-      : transcriptId,
-    segment_id: String((span as Record<string, unknown>).segment_id ?? 'seg_unknown'),
+    transcript_id:
+      typeof (span as Record<string, unknown>).transcript_id === 'string'
+        ? ((span as Record<string, unknown>).transcript_id as string)
+        : transcriptId,
+    segment_id: String(
+      (span as Record<string, unknown>).segment_id ?? 'seg_unknown'
+    ),
     start_seconds: Number((span as Record<string, unknown>).start_seconds ?? 0),
     end_seconds: Number((span as Record<string, unknown>).end_seconds ?? 0),
     text: String((span as Record<string, unknown>).text ?? ''),
@@ -178,7 +181,10 @@ function heuristicDecisionExtraction(
       sentence
     )
   );
-  const decisions = candidates.slice(0, request.max_decisions ?? DEFAULT_MAX_DECISIONS);
+  const decisions = candidates.slice(
+    0,
+    request.max_decisions ?? DEFAULT_MAX_DECISIONS
+  );
 
   if (!decisions.length && sentences.length) {
     decisions.push(sentences[0]);
