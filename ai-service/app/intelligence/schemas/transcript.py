@@ -168,3 +168,36 @@ class MeetingEffectivenessResponse(BaseModel):
     assignment_coverage: float = Field(ge=0, le=1)
     component_weights: dict[str, float]
     explanation: str
+
+
+class MoMAttendee(BaseModel):
+    name: str
+    email: str | None = None
+
+
+class MoMDraftActionItem(BaseModel):
+    assignee: str
+    task: str
+    dueDate: str | None = None
+
+
+class MoMDiscussionPoint(BaseModel):
+    speaker: str
+    point: str
+
+
+class MoMResponse(BaseModel):
+    meetingId: str | UUID | None = None
+    attendees: list[MoMAttendee]
+    summary: str
+    keyPoints: list[str]
+    draftActionItems: list[MoMDraftActionItem]
+    # Backwards compatibility fields
+    agenda: list[str] = Field(default_factory=list)
+    discussionPoints: list[MoMDiscussionPoint] = Field(default_factory=list)
+
+
+class MoMRequest(BaseModel):
+    transcript: list[dict] = Field(min_length=1)
+    meetingTitle: str | None = None
+    participants: list[dict] = Field(default_factory=list)
