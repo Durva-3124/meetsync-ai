@@ -38,7 +38,7 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
             last_exception: Exception | None = None
             logger.info(
                 "endpoint.start",
-                extra={"function": fn.__name__, "args_list": [], "kwargs": {}},
+                extra={"function": fn.__name__, "fn_args": [], "fn_kwargs": {}},
             )
             for attempt in range(1, retries + 1):
                 try:
