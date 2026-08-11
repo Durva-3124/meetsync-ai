@@ -13,10 +13,10 @@ def make_transcript(tid: str):
         "source_url": "https://example.com/audio.wav",
         "language": "en",
         "duration_seconds": 10.0,
-        "text": "We will hire Alice. Discuss budgets later.",
+        "text": "We will hire Alice. We will discuss budgets later.",
         "segments": [
             {"id": "seg_0001", "start_seconds": 0.0, "end_seconds": 2.0, "text": "We will hire Alice.", "speaker": "SPEAKER_00", "confidence": 0.99},
-            {"id": "seg_0002", "start_seconds": 2.0, "end_seconds": 5.0, "text": "Discuss budgets later.", "speaker": "SPEAKER_01", "confidence": 0.9},
+            {"id": "seg_0002", "start_seconds": 2.0, "end_seconds": 5.0, "text": "We will discuss budgets later.", "speaker": "SPEAKER_01", "confidence": 0.9},
         ],
         "model": {"transcription": "whisper", "diarization": None},
     }

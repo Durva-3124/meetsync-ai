@@ -1,0 +1,150 @@
+time="2026-08-11T15:37:12Z" level=warning msg="/app/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+ Image app-backend Building
+ Image app-ai-1 Building
+ Image app-ai-2 Building
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.23kB done
+#1 DONE 0.0s
+
+#2 [backend internal] load build definition from Dockerfile
+#2 transferring dockerfile: 631B 0.1s done
+#2 DONE 0.1s
+
+#3 [ai-1 internal] load build definition from Dockerfile
+#3 transferring dockerfile: 410B 0.1s done
+#3 DONE 0.1s
+
+#4 [ai-1 internal] load metadata for docker.io/library/python:3.11-slim
+#4 DONE 0.5s
+
+#5 [ai-2 internal] load .dockerignore
+#5 transferring context: 88B done
+#5 DONE 0.0s
+
+#6 [ai-1 1/6] FROM docker.io/library/python:3.11-slim@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff
+#6 DONE 0.0s
+
+#7 [ai-2 internal] load build context
+#7 transferring context: 2.30kB 0.0s done
+#7 DONE 0.0s
+
+#8 [ai-1 2/6] WORKDIR /app
+#8 CACHED
+
+#9 [ai-1 3/6] RUN apt-get update     && apt-get install --no-install-recommends -y ffmpeg     && rm -rf /var/lib/apt/lists/*
+#9 CACHED
+
+#10 [ai-1 4/6] COPY requirements.txt ./
+#10 CACHED
+
+#11 [ai-1 5/6] RUN pip install --no-cache-dir -r requirements.txt
+#11 CACHED
+
+#12 [ai-1 6/6] COPY app ./app
+#12 ...
+
+#13 [backend internal] load metadata for docker.io/library/node:20-slim
+#13 DONE 0.8s
+
+#14 [backend internal] load .dockerignore
+#14 transferring context: 108B done
+#14 DONE 0.0s
+
+#15 [backend 1/7] FROM docker.io/library/node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+#15 DONE 0.0s
+
+#16 [backend internal] load build context
+#16 transferring context: 3.33kB done
+#16 DONE 0.0s
+
+#17 [backend 3/7] RUN apt-get update && apt-get install -y unzip && rm -rf /var/lib/apt/lists/*
+#17 CACHED
+
+#18 [backend 2/7] WORKDIR /app
+#18 CACHED
+
+#19 [backend 4/7] COPY package*.json ./
+#19 CACHED
+
+#20 [backend 5/7] RUN npm install
+#20 CACHED
+
+#21 [backend 6/7] COPY . .
+#21 CACHED
+
+#22 [backend 7/7] RUN npm run build
+#22 CACHED
+
+#23 [backend] exporting to image
+#23 exporting layers done
+#23 writing image sha256:aac488f37c5c6837daef84ce46431be210ffb368a18ff88fda8500a3381bd354 done
+#23 naming to docker.io/library/app-backend done
+#23 DONE 0.0s
+
+#24 [backend] resolving provenance for metadata file
+#24 DONE 0.0s
+
+#12 [ai-1 6/6] COPY app ./app
+#12 DONE 43.3s
+
+#25 [ai-2] exporting to image
+#25 exporting layers
+#25 ...
+
+#26 [ai-1] exporting to image
+#26 exporting layers 52.5s done
+#26 ...
+
+#25 [ai-2] exporting to image
+#25 exporting layers 52.4s done
+#25 writing image sha256:c327376683ccd44c30e9bc85cbbbadc44480af47f472ed82da615d88ca1cdbe3 done
+#25 naming to docker.io/library/app-ai-2 0.0s done
+#25 DONE 52.6s
+
+#26 [ai-1] exporting to image
+#26 writing image sha256:c3fb0f5dcd9ae0671afab44f3cc789e80c9a7e5167be4aa6230ab5208351f7a6 done
+#26 naming to docker.io/library/app-ai-1 0.0s done
+#26 DONE 52.6s
+
+#27 [ai-1] resolving provenance for metadata file
+#27 DONE 0.4s
+
+#28 [ai-2] resolving provenance for metadata file
+#28 DONE 0.4s
+ Image app-ai-1 Built
+ Image app-ai-2 Built
+ Image app-backend Built
+ Network app_default Creating
+ Network app_default Created
+ Volume app_redis_data Creating
+ Volume app_redis_data Created
+ Volume app_mongo_data Creating
+ Volume app_mongo_data Created
+ Container app-redis-1 Creating
+ Container app-mongo-1 Creating
+ Container app-redis-1 Created
+ Container app-mongo-1 Created
+ Container app-ai-2-1 Creating
+ Container app-backend-1 Creating
+ Container app-ai-1-1 Creating
+ Container app-backend-1 Created
+ Container app-ai-2-1 Created
+ Container app-ai-1-1 Created
+ Container app-mongo-1 Starting
+ Container app-redis-1 Starting
+ Container app-redis-1 Started
+ Container app-mongo-1 Started
+ Container app-mongo-1 Waiting
+ Container app-mongo-1 Waiting
+ Container app-redis-1 Waiting
+ Container app-mongo-1 Waiting
+ Container app-redis-1 Healthy
+ Container app-mongo-1 Healthy
+ Container app-ai-2-1 Starting
+ Container app-mongo-1 Healthy
+ Container app-backend-1 Starting
+ Container app-mongo-1 Healthy
+ Container app-ai-1-1 Starting
+ Container app-ai-1-1 Started
+ Container app-backend-1 Started
+ Container app-ai-2-1 Started
