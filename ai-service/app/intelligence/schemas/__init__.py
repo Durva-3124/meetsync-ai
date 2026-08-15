@@ -2,6 +2,9 @@
 
 from app.intelligence.schemas.health import HealthResponse
 from app.intelligence.schemas.transcript import (
+    DeadlineExtractionRequest,
+    DeadlineExtractionResponse,
+    DeadlineRecord,
     DecisionLog,
     DecisionLogEntry,
     DecisionSourceSpan,
@@ -28,6 +31,9 @@ from app.intelligence.schemas.transcript import (
 )
 
 __all__ = [
+    "DeadlineExtractionRequest",
+    "DeadlineExtractionResponse",
+    "DeadlineRecord",
     "DecisionLog",
     "DecisionLogEntry",
     "DecisionSourceSpan",

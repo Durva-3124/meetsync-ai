@@ -1,3 +1,5 @@
+import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -54,6 +56,60 @@ MOCK_LLM_OUTPUT = MoMLLMOutput(
         }
     ]
 )
+
+
+# ============================================================================
+# Tests: LLM Retry & Repair Path
+# ============================================================================
+
+def test_call_llm_for_mom_retries_and_repairs_malformed_json():
+    """Test malformed LLM JSON is retried and repaired before falling back."""
+
+    class FakeCompletions:
+        def __init__(self):
+            self.calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(content='```json {"summary": "bad json", "keyPoints": ["A"], "actionItems": [}')
+                        )
+                    ]
+                )
+
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=json.dumps({
+                                "summary": "The team aligned on next steps.",
+                                "keyPoints": ["The feature is ready for deployment."],
+                                "actionItems": [{
+                                    "assignee": "Bob",
+                                    "task": "Deploy the feature",
+                                    "dueDate": "Friday",
+                                }],
+                            })
+                        )
+                    )
+                ]
+            )
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+    output = __import__("app.internal_ai.llm", fromlist=["call_llm_for_mom"]).call_llm_for_mom(
+        transcript_text="Bob will deploy the feature by Friday.",
+        meeting_title="Release check-in",
+        client=fake_client,
+    )
+
+    assert output is not None
+    assert output.summary == "The team aligned on next steps."
+    assert output.actionItems[0].assignee == "Bob"
+    assert fake_client.chat.completions.calls == 2
 
 
 # ============================================================================
@@ -254,6 +310,69 @@ def test_mom_endpoint_validation_error():
     resp = client.post("/internal/ai/mom", json=invalid_payload)
     
     assert resp.status_code in [400, 422]  # Pydantic validation error
+
+
+def test_deadlines_endpoint_normalizes_due_dates_and_links_to_action_items():
+    """Test normalized deadlines are generated from draft action items with confidence scores."""
+    payload = {
+        "meetingTitle": "Release check-in",
+        "meetingDate": "2026-08-14",
+        "transcript": [
+            {"speaker": "SPEAKER_00", "start": 0.0, "end": 2.0, "text": "Bob will deploy the feature by Friday."},
+            {"speaker": "SPEAKER_01", "start": 2.1, "end": 4.0, "text": "Alice will finalize the API docs by Monday."},
+        ],
+        "draftActionItems": [
+            {"assignee": "Bob", "task": "Deploy the feature", "dueDate": "Friday"},
+            {"assignee": "Alice", "task": "Finalize the API docs", "dueDate": "Monday"},
+        ],
+    }
+
+    resp = client.post("/internal/ai/deadlines", json=payload)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "deadlines" in data
+    assert len(data["deadlines"]) >= 2
+    assert all(0.0 <= item["confidence"] <= 1.0 for item in data["deadlines"])
+    assert all("sourceActionItem" in item for item in data["deadlines"])
+    assert any(item["assignee"] == "Bob" for item in data["deadlines"])
+    assert any(item["deadline"].startswith("2026-08-") for item in data["deadlines"])
+
+
+def test_deadlines_integration_after_mom_generation():
+    """Test deadlines are derived from MoM draft action items in the same meeting flow."""
+    payload = {
+        "meetingTitle": "Q3 Execution Planning",
+        "meetingDate": "2026-08-14",
+        "transcript": [
+            {"speaker": "SPEAKER_00", "start": 0.0, "end": 5.0, "text": "Auth module with JWT rotation was completed and tested."},
+            {"speaker": "SPEAKER_01", "start": 5.1, "end": 9.0, "text": "Bob will configure the Redis caching layer by Friday."},
+        ],
+        "participants": [
+            {"name": "Alice", "email": "alice@example.com"},
+            {"name": "Bob", "email": "bob@example.com"},
+        ],
+    }
+
+    mom_resp = client.post("/internal/ai/mom", json=payload)
+    assert mom_resp.status_code == 200
+    mom_data = mom_resp.json()
+    assert len(mom_data["draftActionItems"]) >= 1
+
+    deadlines_resp = client.post(
+        "/internal/ai/deadlines",
+        json={
+            "meetingTitle": payload["meetingTitle"],
+            "meetingDate": payload["meetingDate"],
+            "transcript": payload["transcript"],
+            "draftActionItems": mom_data["draftActionItems"],
+        },
+    )
+
+    assert deadlines_resp.status_code == 200
+    deadlines_data = deadlines_resp.json()
+    assert "deadlines" in deadlines_data
+    assert any(item["assignee"] == "Bob" for item in deadlines_data["deadlines"])
 
 
 # ============================================================================
