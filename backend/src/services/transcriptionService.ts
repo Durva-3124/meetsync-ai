@@ -133,10 +133,11 @@ export const processAudioTranscription = async (
           console.error(`[SkillMatch] task="${item.task}"`, skillResult.reason);
         }
 
+        const topMatch = skillData?.matches?.[0];
         let matchedUserId: string | undefined;
-        if (skillData?.matchedUserId) {
+        if (topMatch?.employee_id) {
           const matched = participants.find(
-            (p) => p._id.toString() === skillData.matchedUserId
+            (p) => p._id.toString() === topMatch.employee_id
           );
           matchedUserId = matched?._id.toString();
         }
@@ -146,7 +147,7 @@ export const processAudioTranscription = async (
           assignee: item.assignee,
           task: item.task,
           dueDate: item.dueDate,
-          requiredSkills: skillData?.requiredSkills ?? [],
+          requiredSkills: topMatch?.matched_skill_ids ?? [],
           matchedUserId,
           status: 'draft' as const,
           // Pass source_span through untouched for FE Explainable-AI panel

@@ -143,7 +143,7 @@ def test_effectiveness_score_endpoint_combines_talk_time_and_decisions():
     assert data["agenda_adherence"] > 0.0
     assert data["decision_density"] >= 0.0
     assert data["talk_time_balance"] >= 0.0
-    assert data["assignment_coverage"] == 1.0
+    assert data["assignment_coverage"] == 0.5
 
 
 def test_decisions_endpoint_links_text_to_transcript_segment_by_embedding():

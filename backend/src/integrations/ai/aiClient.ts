@@ -23,6 +23,19 @@ export interface TranscriptSegment {
   text: string;
 }
 
+export interface SourceSpan {
+  transcript_id?: string;
+  segment_id?: string;
+  start?: number;
+  end?: number;
+  start_seconds?: number;
+  end_seconds?: number;
+  text: string;
+  speaker?: string;
+  character_start?: number;
+  character_end?: number;
+}
+
 export interface TranscribeResponse {
   transcript: TranscriptSegment[];
 }
@@ -35,7 +48,7 @@ export interface ActionItemsResponse {
     assignee: string;
     task: string;
     dueDate?: string;
-    source_span?: { start: number; end: number; text: string };
+    source_span?: SourceSpan;
   }[];
 }
 export interface SentimentResponse {
@@ -72,10 +85,41 @@ export interface DeadlinesResponse {
     rawText: string;
   }[];
 }
+export interface SkillMatchCandidateSkill {
+  skill_id: string;
+  name: string;
+  description?: string;
+  proficiency: number;
+}
+
+export interface SkillMatchCandidate {
+  employee_id: string;
+  name: string;
+  skills: SkillMatchCandidateSkill[];
+  workload: {
+    hours_assigned: number;
+    hours_capacity: number;
+    utilization?: number;
+    available_fraction?: number;
+  };
+  profile_embedding?: number[];
+}
+
+export interface SkillMatchMatch {
+  employee_id: string;
+  name: string;
+  matched_skill_ids: string[];
+  skill_similarity: number;
+  workload_penalty: number;
+  final_score: number;
+  utilization: number;
+  available_fraction: number;
+  reason: string;
+}
+
 export interface SkillMatchResponse {
-  requiredSkills: string[];
-  matchedUserId: string | null;
-  confidence: number;
+  task_id: string;
+  matches: SkillMatchMatch[];
 }
 export interface EffectivenessScoreResponse {
   score: number;
@@ -207,13 +251,84 @@ export const getMeetingInsights = async (
   return ai2Post('/internal/ai/insights', { transcript, speakerMap });
 };
 
+export function buildSkillMatchRequest(
+  task: string,
+  assignee: string,
+  participants: { _id?: { toString(): string }; name: string; email: string; skills: string[] }[]
+): {
+  task_id: string;
+  task_description: string;
+  required_skills: string[];
+  candidates: SkillMatchCandidate[];
+  workload_weight: number;
+} {
+  const requiredSkills = Array.from(
+    new Set(
+      task
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((part) => part.length > 3)
+        .slice(0, 6)
+    )
+  );
+
+  return {
+    task_id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    task_description: task,
+    required_skills: requiredSkills.length ? requiredSkills : [assignee || 'general'],
+    candidates: participants.map((person, index) => ({
+      employee_id: person._id?.toString?.() ?? `emp_${index}`,
+      name: person.name,
+      skills: (person.skills ?? []).map((skill, skillIndex) => ({
+        skill_id: `skill_${index}_${skillIndex}`,
+        name: skill,
+        description: `${person.name} has ${skill} capability relevant to the task.`,
+        proficiency: 0.8,
+      })),
+      workload: {
+        hours_assigned: 0,
+        hours_capacity: 40,
+      },
+    })),
+    workload_weight: 0.25,
+  };
+}
+
+export function normalizeSkillMatchResponse(
+  response: Partial<SkillMatchResponse> | null | undefined
+): SkillMatchResponse {
+  const matches = Array.isArray(response?.matches)
+    ? response.matches.map((match) => ({
+        employee_id: match.employee_id,
+        name: match.name,
+        matched_skill_ids: Array.isArray(match.matched_skill_ids)
+          ? match.matched_skill_ids
+          : [],
+        skill_similarity: typeof match.skill_similarity === 'number' ? match.skill_similarity : 0,
+        workload_penalty: typeof match.workload_penalty === 'number' ? match.workload_penalty : 0,
+        final_score: typeof match.final_score === 'number' ? match.final_score : 0,
+        utilization: typeof match.utilization === 'number' ? match.utilization : 0,
+        available_fraction: typeof match.available_fraction === 'number' ? match.available_fraction : 1,
+        reason: typeof match.reason === 'string' ? match.reason : 'Matched against the task profile.',
+      }))
+    : [];
+
+  return {
+    task_id: typeof response?.task_id === 'string' ? response.task_id : 'task_unknown',
+    matches,
+  };
+}
+
 export const matchSkill = async (
   task: string,
   assignee: string,
-  participants: { name: string; email: string; skills: string[] }[]
+  participants: { _id?: { toString(): string }; name: string; email: string; skills: string[] }[]
 ): Promise<SkillMatchResponse> => {
   if (useMocks) return skillMatchFixture;
-  return ai2Post('/internal/ai/skill-match', { task, assignee, participants });
+  const payload = buildSkillMatchRequest(task, assignee, participants);
+  const data = await ai2Post<SkillMatchResponse>('/internal/ai/skill-match', payload);
+  return normalizeSkillMatchResponse(data);
 };
 
 export const scoreEffectiveness = async (input: {

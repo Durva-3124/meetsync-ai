@@ -2,17 +2,46 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Tuple
+import hashlib
+import os
+import re
+from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 
 _DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-_MODEL_CACHE: dict[str, object] = {}
-SentenceTransformer = None
+_MODEL_CACHE: dict[str, Any] = {}
+SentenceTransformer: Any | None = None
 
 
-def get_embedding_model(model_name: str = _DEFAULT_MODEL, device: str = "cpu") -> object:
+def _fallback_embedding(text: str, dimension: int = 384) -> list[float]:
+    """Deterministic lightweight embedding for offline and test environments."""
+    cleaned = re.findall(r"[a-z0-9]+", text.lower())
+    if not cleaned:
+        return [0.0] * dimension
+
+    vector = np.zeros(dimension, dtype=float)
+    for token in cleaned:
+        idx = int(hashlib.md5(token.encode("utf-8")).hexdigest(), 16) % dimension
+        vector[idx] += 1.0
+
+    for left, right in zip(cleaned, cleaned[1:]):
+        token_pair = f"{left} {right}"
+        idx = int(hashlib.md5(token_pair.encode("utf-8")).hexdigest(), 16) % dimension
+        vector[idx] += 0.5
+
+    norm = np.linalg.norm(vector)
+    if norm > 0:
+        vector = vector / norm
+    return vector.tolist()
+
+
+def get_embedding_model(model_name: str = _DEFAULT_MODEL, device: str = "cpu") -> Any:
     global SentenceTransformer
+    if os.environ.get("MEETSYNC_USE_LOCAL_EMBEDDINGS", "1") == "1":
+        return None
+
     if SentenceTransformer is None:
         from sentence_transformers import SentenceTransformer as _SentenceTransformer
 
@@ -24,24 +53,43 @@ def get_embedding_model(model_name: str = _DEFAULT_MODEL, device: str = "cpu") -
     return _MODEL_CACHE[cache_key]
 
 
-def embed(texts: Iterable[str], model_name: str = _DEFAULT_MODEL, device: str = "cpu", batch_size: int = 32) -> list[list[float]]:
+def embed(
+    texts: Iterable[str],
+    model_name: str = _DEFAULT_MODEL,
+    device: str = "cpu",
+    batch_size: int = 32,
+) -> list[list[float]]:
     """Return normalized embedding vectors for the provided texts."""
     texts_list = list(texts)
     if not texts_list:
         return []
 
-    model = get_embedding_model(model_name=model_name, device=device)
-    embeddings = model.encode(
-        texts_list,
-        batch_size=batch_size,
-        show_progress_bar=False,
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )
-    return [vector.tolist() for vector in embeddings]
+    if os.environ.get("MEETSYNC_USE_LOCAL_EMBEDDINGS", "1") == "1":
+        return [_fallback_embedding(text) for text in texts_list]
+
+    try:
+        model = get_embedding_model(model_name=model_name, device=device)
+        if model is None:
+            return [_fallback_embedding(text) for text in texts_list]
+        embeddings = model.encode(
+            texts_list,
+            batch_size=batch_size,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+        )
+        return [vector.tolist() for vector in embeddings]
+    except Exception:  # pragma: no cover - fallback when model loading fails in offline env
+        return [_fallback_embedding(text) for text in texts_list]
 
 
-def rank_by_similarity(query: str, candidates: Iterable[str], model_name: str = _DEFAULT_MODEL, device: str = "cpu", batch_size: int = 32) -> List[Tuple[str, float]]:
+def rank_by_similarity(
+    query: str,
+    candidates: Iterable[str],
+    model_name: str = _DEFAULT_MODEL,
+    device: str = "cpu",
+    batch_size: int = 32,
+) -> list[tuple[str, float]]:
     """Rank candidate texts by cosine similarity to the query.
 
     Returns a list of (candidate, similarity) sorted descending by similarity.
@@ -66,7 +114,7 @@ def rank_by_similarity(query: str, candidates: Iterable[str], model_name: str = 
     denom = c_norms * (q_norm or 1.0)
     sims = np.dot(cembs, q) / np.where(denom == 0, 1.0, denom)
 
-    results: List[Tuple[str, float]] = []
+    results: list[tuple[str, float]] = []
     for candidate, sim in zip(candidates_list, sims.tolist()):
         results.append((candidate, float(sim)))
 

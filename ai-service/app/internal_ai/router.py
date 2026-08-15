@@ -2,35 +2,41 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from functools import wraps
-from time import sleep
-from typing import Any, Callable, Optional
 import logging
 import re
 import uuid
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from functools import wraps
+from time import sleep
+from typing import Any
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
 
 from app.intelligence.embeddings import embed
 from app.intelligence.schemas import (
+    DeadlineExtractionRequest,
+    DeadlineExtractionResponse,
+    DeadlineRecord,
     DecisionLog,
     DecisionLogEntry,
     DecisionSourceSpan,
     EmployeeMatch,
     MeetingEffectivenessRequest,
     MeetingEffectivenessResponse,
+    MoMAttendee,
+    MoMDiscussionPoint,
+    MoMDraftActionItem,
+    MoMRequest,
+    MoMResponse,
     SkillMatchCandidate,
     SkillMatchRequest,
     SkillMatchResponse,
     Transcript,
-    MoMRequest,
-    MoMResponse,
-    MoMAttendee,
-    MoMDraftActionItem,
-    MoMDiscussionPoint,
 )
+from app.internal_ai.llm import _extract_date_entities, _normalize_due_date, call_llm_for_mom, get_llm_client
 
 logger = logging.getLogger("meetsync-ai.internal-ai")
 executor = ThreadPoolExecutor(max_workers=4)
@@ -43,23 +49,29 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
             last_exception: Exception | None = None
             logger.info(
                 "endpoint.start",
-                extra={"function": fn.__name__, "fn_args": [], "fn_kwargs": {}},
+                extra={
+                    "function": fn.__name__,
+                    "timeout_seconds": timeout_seconds,
+                    "retries": retries,
+                    "attempt": 1,
+                },
             )
-            for attempt in range(1, retries + 1):
+
+            for attempt in range(1, retries + 2):
                 try:
                     future = executor.submit(fn, *args, **kwargs)
                     result = future.result(timeout=timeout_seconds)
                     if attempt > 1:
                         logger.info(
                             "endpoint.retry_success",
-                            extra={"function": fn.__name__, "attempt": attempt},
+                            extra={"function": fn.__name__, "attempt": attempt, "timeout_seconds": timeout_seconds},
                         )
                     logger.info(
                         "endpoint.complete",
-                        extra={"function": fn.__name__, "attempt": attempt},
+                        extra={"function": fn.__name__, "attempt": attempt, "status": "success"},
                     )
                     return result
-                except FutureTimeoutError as exc:
+                except FutureTimeoutError:
                     logger.warning(
                         "endpoint.timeout",
                         extra={
@@ -68,10 +80,17 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
                             "timeout_seconds": timeout_seconds,
                         },
                     )
-                    last_exception = HTTPException(status_code=504, detail="Request timed out")
+                    last_exception = HTTPException(
+                        status_code=504,
+                        detail={
+                            "code": "request_timeout",
+                            "message": "Request timed out",
+                            "details": {"timeout_seconds": timeout_seconds, "attempt": attempt},
+                        },
+                    )
                 except HTTPException:
                     raise
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "endpoint.failure",
                         extra={
@@ -81,11 +100,21 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
                         },
                     )
                     last_exception = exc
-                if attempt < retries:
+
+                if attempt <= retries:
                     sleep(backoff_seconds * attempt)
+
             if isinstance(last_exception, HTTPException):
                 raise last_exception
-            raise HTTPException(status_code=500, detail=str(last_exception) if last_exception else "Unhandled error")
+
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "internal_server_error",
+                    "message": str(last_exception) if last_exception else "Unhandled error",
+                    "details": {"function": fn.__name__, "attempts": retries + 1},
+                },
+            )
 
         return wrapper
 
@@ -147,14 +176,28 @@ def extract_decisions(payload: dict) -> DecisionLog:
     max_decisions = int(payload.get("max_decisions", 10))
 
     if not transcript_data and not text:
-        raise HTTPException(status_code=400, detail="Provide `transcript` or `text` in the request body")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "validation_error",
+                "message": "Provide `transcript` or `text` in the request body",
+                "details": {"required_fields": ["transcript", "text"]},
+            },
+        )
 
-    transcript: Optional[Transcript] = None
+    transcript: Transcript | None = None
     if transcript_data:
         try:
             transcript = Transcript(**transcript_data)
-        except Exception as exc:  # pragma: no cover - validation errors surfaced to caller
-            raise HTTPException(status_code=400, detail=f"Invalid transcript: {exc}")
+        except (TypeError, ValueError) as exc:  # pragma: no cover - validation errors surfaced to caller
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "validation_error",
+                    "message": "Invalid transcript payload",
+                    "details": {"error": str(exc)},
+                },
+            ) from exc
 
     if not text and transcript:
         text = transcript.text
@@ -177,6 +220,11 @@ def extract_decisions(payload: dict) -> DecisionLog:
         "we should",
         "agree to",
         "will",
+        "discuss",
+        "review",
+        "plan",
+        "finalize",
+        "schedule",
     ]
 
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text or "") if s.strip()]
@@ -355,23 +403,123 @@ def effectiveness_score(request: MeetingEffectivenessRequest) -> MeetingEffectiv
     )
 
 
-@internal_ai_router.post("/mom", response_model=MoMResponse)
-@with_timeout_and_retries(timeout_seconds=10.0, retries=3, backoff_seconds=0.3)
-def generate_mom(request: MoMRequest) -> MoMResponse:
-    """Generate Minutes of Meeting (MoM) from meeting transcript and details."""
-    meeting_title = request.meetingTitle or "Sprint Review"
-    transcript_segments = request.transcript
+def _find_action_item_match(segment_text: str, action_item: dict[str, Any]) -> bool:
+    """Check whether a transcript segment matches an action item by task text or assignee."""
+    if not segment_text:
+        return False
+    haystack = segment_text.lower()
+    task = str(action_item.get("task") or action_item.get("description") or "").lower()
+    assignee = str(action_item.get("assignee") or "").lower()
+    return bool((task and task in haystack) or (assignee and assignee in haystack))
 
-    # 1. Attendees extraction
+
+@internal_ai_router.post("/deadlines", response_model=DeadlineExtractionResponse)
+@with_timeout_and_retries(timeout_seconds=10.0, retries=2, backoff_seconds=0.5)
+def extract_deadlines(payload: DeadlineExtractionRequest) -> DeadlineExtractionResponse:
+    """Return normalized deadlines derived from transcript or draft action items."""
+    transcript_segments = payload.transcript or []
+    meeting_date = payload.meetingDate
+    draft_action_items = payload.draftActionItems or []
+
+    candidates: list[DeadlineRecord] = []
+    if not draft_action_items and transcript_segments:
+        for seg in transcript_segments:
+            text = str(seg.get("text", "") or "").strip()
+            if not text:
+                continue
+            low = text.lower()
+            if any(keyword in low for keyword in ["will", "should", "must", "need to", "by "]):
+                draft_action_items.append({
+                    "assignee": seg.get("speaker", "Unknown"),
+                    "task": text,
+                    "dueDate": next((entity for entity in _extract_date_entities(text) if entity), None),
+                })
+
+    for item in draft_action_items:
+        description = str(item.get("task") or item.get("description") or "").strip()
+        assignee = str(item.get("assignee") or "Unknown").strip() or "Unknown"
+        due_date_raw = item.get("dueDate") or item.get("deadline")
+
+        raw_text = ""
+        if transcript_segments:
+            for seg in transcript_segments:
+                seg_text = str(seg.get("text", "") or "")
+                if not seg_text or not _find_action_item_match(seg_text, item):
+                    continue
+                raw_text = seg_text.strip()
+                break
+        if not raw_text:
+            raw_text = description or str(due_date_raw or "")
+
+        if due_date_raw is None:
+            for seg in transcript_segments:
+                seg_text = str(seg.get("text", "") or "")
+                entities = _extract_date_entities(seg_text)
+                if entities:
+                    due_date_raw = entities[0]
+                    raw_text = seg_text.strip()
+                    break
+
+        normalized_deadline = _normalize_due_date(str(due_date_raw) if due_date_raw is not None else None, meeting_date)
+        if not normalized_deadline:
+            continue
+
+        score = 0.65
+        if due_date_raw is not None:
+            score += 0.2
+        if any(term in raw_text.lower() for term in ["by", "deadline", "due", "friday", "monday", "tomorrow", "next week", "end of sprint"]):
+            score += 0.1
+        if description and description.lower() in raw_text.lower():
+            score += 0.05
+        confidence = min(1.0, max(0.0, score))
+
+        candidates.append(
+            DeadlineRecord(
+                description=description or raw_text,
+                assignee=assignee,
+                deadline=normalized_deadline,
+                rawText=raw_text,
+                confidence=round(confidence, 3),
+                sourceActionItem=description or None,
+            )
+        )
+
+    candidates.sort(key=lambda item: (-item.confidence, item.assignee, item.deadline))
+    return DeadlineExtractionResponse(deadlines=candidates)
+
+
+@internal_ai_router.post("/mom", response_model=MoMResponse)
+@with_timeout_and_retries(timeout_seconds=15.0, retries=2, backoff_seconds=1.0)
+def generate_mom(request: MoMRequest) -> MoMResponse:
+    """Generate Minutes of Meeting (MoM) from meeting transcript and details.
+    
+    This endpoint:
+    1. Attempts LLM-based extraction (Claude/GPT) for high-quality results
+    2. Falls back to rule-based extraction if LLM unavailable/fails
+    3. Always validates output with Pydantic schemas
+    4. Handles errors gracefully (API timeouts, malformed JSON, validation errors)
+    """
+    if not request.transcript:
+        raise HTTPException(status_code=400, detail="Transcript is required and must not be empty")
+
+    meeting_title = request.meetingTitle or "Meeting"
+    meeting_date = getattr(request, "meetingDate", None)
+    transcript_segments = request.transcript
+    participants = request.participants or []
+
+    # ============================================================================
+    # Phase 1: Extract attendees (always done with provided participants + speakers)
+    # ============================================================================
     attendees_map = {}
-    # First use provided participants
-    for p in request.participants:
+
+    # First, use provided participants (source of truth)
+    for p in participants:
         name = p.get("name")
         email = p.get("email")
         if name:
             attendees_map[name.lower()] = MoMAttendee(name=name, email=email)
 
-    # Also detect speakers from transcript
+    # Also detect speakers from transcript (as additional attendees if not in participants)
     unique_speakers = set()
     for seg in transcript_segments:
         speaker = seg.get("speaker")
@@ -379,13 +527,13 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
             unique_speakers.add(speaker)
 
     for speaker in sorted(unique_speakers):
-        # map SPEAKER_00 format to Alice/Bob/Charlie or similar if not in participants
+        # Try to map SPEAKER_00 format to real names if not in participants
         speaker_name = speaker
-        if speaker == "SPEAKER_00":
+        if speaker == "SPEAKER_00" and speaker not in [p.get("name") for p in participants]:
             speaker_name = "Alice"
-        elif speaker == "SPEAKER_01":
+        elif speaker == "SPEAKER_01" and speaker not in [p.get("name") for p in participants]:
             speaker_name = "Bob"
-        elif speaker == "SPEAKER_02":
+        elif speaker == "SPEAKER_02" and speaker not in [p.get("name") for p in participants]:
             speaker_name = "Charlie"
 
         if speaker_name.lower() not in attendees_map:
@@ -396,114 +544,208 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
 
     attendees_list = list(attendees_map.values())
     if not attendees_list:
-        attendees_list = [MoMAttendee(name="Unknown Attendee", email="unknown@example.com")]
+        attendees_list = [MoMAttendee(name="Unknown Attendee")]
 
-    # 2. Key points extraction
+    # ============================================================================
+    # Phase 2: Try LLM-based extraction first, fall back to rule-based
+    # ============================================================================
+    
+    # Build transcript text for LLM
+    transcript_text = "\n".join([
+        f"{seg.get('speaker', 'Unknown')}: {seg.get('text', '')}"
+        for seg in transcript_segments
+        if seg.get("text", "").strip()
+    ])
+
+    if not transcript_text.strip():
+        raise HTTPException(status_code=400, detail="Transcript must contain at least one non-empty segment")
+
+    # Try LLM generation
+    llm_client = get_llm_client()
+    llm_output = call_llm_for_mom(
+        transcript_text=transcript_text,
+        meeting_title=meeting_title,
+        timeout_seconds=10.0,
+        client=llm_client,
+        meeting_date=meeting_date,
+    )
+
+    if llm_output:
+        # Use LLM output
+        logger.info("Using LLM-generated MoM content")
+        summary = llm_output.summary
+        key_points = llm_output.keyPoints or []
+        
+        # Map LLM action items to MoMDraftActionItem schema
+        draft_action_items = []
+        for item in llm_output.actionItems:
+            try:
+                raw_due_date = item.dueDate if hasattr(item, "dueDate") else item.get("dueDate")
+                draft_action_items.append(
+                    MoMDraftActionItem(
+                        assignee=item.assignee if hasattr(item, "assignee") else item.get("assignee", "Unknown"),
+                        task=item.task if hasattr(item, "task") else item.get("task", ""),
+                        dueDate=_normalize_due_date(raw_due_date, meeting_date),
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                logger.warning(f"Failed to parse action item from LLM: {item}, error: {exc}")
+                continue
+    else:
+        # Fall back to rule-based extraction
+        logger.info("Using rule-based MoM extraction (LLM unavailable or failed)")
+        key_points, summary, draft_action_items = _extract_mom_rule_based(
+            transcript_segments=transcript_segments,
+            attendees=attendees_list,
+            meeting_title=meeting_title,
+            meeting_date=meeting_date,
+        )
+
+    # ============================================================================
+    # Phase 3: Build discussion points and agenda for backward compatibility
+    # ============================================================================
+    discussion_points = []
+    for idx, kp in enumerate(key_points[:5]):  # Limit to first 5
+        # Try to find which speaker said this point
+        speaker = "Unknown"
+        for seg in transcript_segments:
+            text = seg.get("text", "")
+            if kp.lower() in text.lower():
+                speaker = seg.get("speaker", "Unknown")
+                break
+        discussion_points.append(MoMDiscussionPoint(speaker=speaker, point=kp))
+
+    agenda = [
+        "Review completed work",
+        "Discuss blockers and risks",
+        "Plan next steps",
+        "Assignment and closeout"
+    ]
+
+    # ============================================================================
+    # Phase 4: Validate and return
+    # ============================================================================
+    try:
+        response = MoMResponse(
+            meetingId=None,
+            attendees=attendees_list,
+            summary=summary if summary else "No summary generated",
+            keyPoints=key_points,
+            draftActionItems=draft_action_items,
+            agenda=agenda,
+            discussionPoints=discussion_points,
+        )
+        return response
+    except (TypeError, ValueError) as exc:
+        logger.error("Failed to construct MoMResponse", extra={"error": str(exc)})
+        raise HTTPException(status_code=500, detail="Failed to generate MoM response") from exc
+
+
+def _extract_mom_rule_based(
+    transcript_segments: list[dict],
+    attendees: list[MoMAttendee],
+    meeting_title: str,
+    meeting_date: str | None = None,
+) -> tuple[list[str], str, list[MoMDraftActionItem]]:
+    """Fallback rule-based extraction when LLM is unavailable.
+    
+    Returns: (key_points, summary, draft_action_items)
+    """
     key_points = []
     discussion_points = []
+    draft_action_items = []
 
-    # Simple rule-based extraction
-    for idx, seg in enumerate(transcript_segments):
+    # Extract key points using keywords
+    keywords_for_keypoints = [
+        "completed", "tested", "live", "ready", "achieved",
+        "solved", "fixed", "done", "decided", "approved"
+    ]
+
+    for seg in transcript_segments:
         text = seg.get("text", "").strip()
-        speaker = seg.get("speaker", "SPEAKER_00")
-
-        # map speaker to name
-        speaker_name = speaker
-        if speaker == "SPEAKER_00":
-            speaker_name = "Alice"
-        elif speaker == "SPEAKER_01":
-            speaker_name = "Bob"
-        elif speaker == "SPEAKER_02":
-            speaker_name = "Charlie"
-
         if not text:
             continue
 
         low_text = text.lower()
-        # Extract key points
-        if any(kw in low_text for kw in ["completed", "tested", "live", "ready", "achieved", "solved", "fixed", "done"]):
+        if any(kw in low_text for kw in keywords_for_keypoints):
             key_points.append(text)
-            discussion_points.append(MoMDiscussionPoint(speaker=speaker, point=text))
-
-    # Fallback key points if empty
-    if not key_points:
-        key_points = [
-            "Auth module with JWT rotation was completed and tested.",
-            "Meeting schema with processingStatus enum is live.",
-            "AI client scaffold with mock fixtures is ready for integration."
-        ]
-        discussion_points = [
-            MoMDiscussionPoint(speaker="SPEAKER_00", point="Auth module with JWT rotation was completed and tested."),
-            MoMDiscussionPoint(speaker="SPEAKER_01", point="Meeting schema with processingStatus enum is live."),
-            MoMDiscussionPoint(speaker="SPEAKER_02", point="AI client scaffold with mock fixtures is ready for integration.")
-        ]
-
-    # 3. Draft action items extraction
-    draft_action_items = []
-    action_keywords = ["will", "should", "need to", "action", "task", "assign", "todo"]
-
-    for seg in transcript_segments:
-        text = seg.get("text", "").strip()
-        speaker = seg.get("speaker", "SPEAKER_00")
-
-        # map speaker
-        speaker_name = speaker
-        if speaker == "SPEAKER_00":
-            speaker_name = "Alice"
-        elif speaker == "SPEAKER_01":
-            speaker_name = "Bob"
-        elif speaker == "SPEAKER_02":
-            speaker_name = "Charlie"
-
-        low_text = text.lower()
-        if any(kw in low_text for kw in action_keywords):
-            # Try to find a name as assignee
-            assignee = speaker_name
-            # See if other participant's name is in the sentence
-            for att in attendees_list:
-                if att.name.lower() in low_text and att.name.lower() != speaker_name.lower():
-                    assignee = att.name
-                    break
-
-            # Simple clean up of task description
-            task_desc = text
-            # Add draft action item
-            draft_action_items.append(
-                MoMDraftActionItem(
-                    assignee=assignee,
-                    task=task_desc,
-                    dueDate="Friday" if "friday" in low_text else None
+            discussion_points.append(
+                MoMDiscussionPoint(
+                    speaker=seg.get("speaker", "Unknown"),
+                    point=text
                 )
             )
 
-    # Fallback action items if empty
-    if not draft_action_items:
-        draft_action_items = [
-            MoMDraftActionItem(assignee="Alice", task="Integrate authentication in the frontend review editor", dueDate="2025-08-15"),
-            MoMDraftActionItem(assignee="Bob", task="Configure Redis caching layer in development environment", dueDate="2025-08-18")
-        ]
+    # Extract action items using keywords
+    action_keywords = ["will", "should", "need to", "action", "task", "must", "has to"]
 
-    # 4. Summary generation
-    summary = f"The team held a {meeting_title} meeting. "
+    for seg in transcript_segments:
+        text = seg.get("text", "").strip()
+        speaker = seg.get("speaker", "Unknown")
+
+        if not text:
+            continue
+
+        # Map speaker ID to name
+        speaker_name = _map_speaker_to_name(speaker, attendees)
+        low_text = text.lower()
+
+        if any(kw in low_text for kw in action_keywords):
+            # Try to find assigned person
+            assignee = speaker_name
+            
+            # Look for other attendee names in the sentence
+            for att in attendees:
+                if att.name and att.name.lower() in low_text and att.name.lower() != speaker_name.lower():
+                    assignee = att.name
+                    break
+
+            # Extract due date if mentioned
+            due_date = None
+            if "end of sprint" in low_text:
+                due_date = "End of sprint"
+            else:
+                for entity in _extract_date_entities(text):
+                    if entity:
+                        due_date = entity
+                        break
+                if due_date is None and "friday" in low_text:
+                    due_date = "Friday"
+                elif due_date is None and "monday" in low_text:
+                    due_date = "Monday"
+
+            draft_action_items.append(
+                MoMDraftActionItem(
+                    assignee=assignee,
+                    task=text,
+                    dueDate=_normalize_due_date(due_date, meeting_date),
+                )
+            )
+
+    # Generate summary
+    summary_parts = [f"The team held a {meeting_title} meeting."]
     if key_points:
-        summary += "Key discussions covered: " + "; ".join(key_points[:3]) + "."
+        summary_parts.append("Key discussions covered: " + "; ".join(key_points[:3]) + ".")
+    summary = " ".join(summary_parts)
+
+    return key_points, summary, draft_action_items
+
+
+def _map_speaker_to_name(speaker: str, attendees: list[MoMAttendee]) -> str:
+    """Map speaker ID to name based on attendees list."""
+    # Check if speaker is already a name in attendees
+    for att in attendees:
+        if att.name == speaker:
+            return speaker
+
+    # Try generic mapping
+    if speaker == "SPEAKER_00":
+        return "Alice"
+    elif speaker == "SPEAKER_01":
+        return "Bob"
+    elif speaker == "SPEAKER_02":
+        return "Charlie"
+    elif attendees:
+        return attendees[0].name
     else:
-        summary += "All planned development tasks were reviewed and outstanding action items were assigned."
-
-    # 5. Backwards compatible agenda
-    agenda = [
-        "Sprint review",
-        "Demo of completed features",
-        "Retrospective",
-        "Next sprint planning"
-    ]
-
-    return MoMResponse(
-        meetingId=None,
-        attendees=attendees_list,
-        summary=summary,
-        keyPoints=key_points,
-        draftActionItems=draft_action_items,
-        agenda=agenda,
-        discussionPoints=discussion_points
-    )
+        return "Unknown"
