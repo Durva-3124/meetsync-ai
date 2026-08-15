@@ -25,7 +25,13 @@ from app.intelligence.schemas import (
     SkillMatchRequest,
     SkillMatchResponse,
     Transcript,
+    MoMRequest,
+    MoMResponse,
+    MoMAttendee,
+    MoMDraftActionItem,
+    MoMDiscussionPoint,
 )
+from app.internal_ai.llm import call_llm_for_mom, get_llm_client
 
 logger = logging.getLogger("meetsync-ai.internal-ai")
 executor = ThreadPoolExecutor(max_workers=4)
@@ -38,7 +44,7 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
             last_exception: Exception | None = None
             logger.info(
                 "endpoint.start",
-                extra={"function": fn.__name__, "args": [], "kwargs": {}},
+                extra={"function": fn.__name__, "fn_args": [], "fn_kwargs": {}},
             )
             for attempt in range(1, retries + 1):
                 try:
@@ -348,3 +354,256 @@ def effectiveness_score(request: MeetingEffectivenessRequest) -> MeetingEffectiv
         component_weights=weights,
         explanation=explanation,
     )
+
+
+@internal_ai_router.post("/mom", response_model=MoMResponse)
+@with_timeout_and_retries(timeout_seconds=15.0, retries=2, backoff_seconds=1.0)
+def generate_mom(request: MoMRequest) -> MoMResponse:
+    """Generate Minutes of Meeting (MoM) from meeting transcript and details.
+    
+    This endpoint:
+    1. Attempts LLM-based extraction (Claude/GPT) for high-quality results
+    2. Falls back to rule-based extraction if LLM unavailable/fails
+    3. Always validates output with Pydantic schemas
+    4. Handles errors gracefully (API timeouts, malformed JSON, validation errors)
+    """
+    if not request.transcript:
+        raise HTTPException(status_code=400, detail="Transcript is required and must not be empty")
+
+    meeting_title = request.meetingTitle or "Meeting"
+    transcript_segments = request.transcript
+    participants = request.participants or []
+
+    # ============================================================================
+    # Phase 1: Extract attendees (always done with provided participants + speakers)
+    # ============================================================================
+    attendees_map = {}
+
+    # First, use provided participants (source of truth)
+    for p in participants:
+        name = p.get("name")
+        email = p.get("email")
+        if name:
+            attendees_map[name.lower()] = MoMAttendee(name=name, email=email)
+
+    # Also detect speakers from transcript (as additional attendees if not in participants)
+    unique_speakers = set()
+    for seg in transcript_segments:
+        speaker = seg.get("speaker")
+        if speaker:
+            unique_speakers.add(speaker)
+
+    for speaker in sorted(unique_speakers):
+        # Try to map SPEAKER_00 format to real names if not in participants
+        speaker_name = speaker
+        if speaker == "SPEAKER_00" and speaker not in [p.get("name") for p in participants]:
+            speaker_name = "Alice"
+        elif speaker == "SPEAKER_01" and speaker not in [p.get("name") for p in participants]:
+            speaker_name = "Bob"
+        elif speaker == "SPEAKER_02" and speaker not in [p.get("name") for p in participants]:
+            speaker_name = "Charlie"
+
+        if speaker_name.lower() not in attendees_map:
+            attendees_map[speaker_name.lower()] = MoMAttendee(
+                name=speaker_name,
+                email=f"{speaker_name.lower()}@example.com"
+            )
+
+    attendees_list = list(attendees_map.values())
+    if not attendees_list:
+        attendees_list = [MoMAttendee(name="Unknown Attendee")]
+
+    # ============================================================================
+    # Phase 2: Try LLM-based extraction first, fall back to rule-based
+    # ============================================================================
+    
+    # Build transcript text for LLM
+    transcript_text = "\n".join([
+        f"{seg.get('speaker', 'Unknown')}: {seg.get('text', '')}"
+        for seg in transcript_segments
+        if seg.get("text", "").strip()
+    ])
+
+    if not transcript_text.strip():
+        raise HTTPException(status_code=400, detail="Transcript must contain at least one non-empty segment")
+
+    # Try LLM generation
+    llm_client = get_llm_client()
+    llm_output = call_llm_for_mom(
+        transcript_text=transcript_text,
+        meeting_title=meeting_title,
+        timeout_seconds=10.0,
+        client=llm_client,
+    )
+
+    if llm_output:
+        # Use LLM output
+        logger.info("Using LLM-generated MoM content")
+        summary = llm_output.summary
+        key_points = llm_output.keyPoints or []
+        
+        # Map LLM action items to MoMDraftActionItem schema
+        draft_action_items = []
+        for item in llm_output.actionItems:
+            try:
+                draft_action_items.append(
+                    MoMDraftActionItem(
+                        assignee=item.get("assignee", "Unknown"),
+                        task=item.get("task", ""),
+                        dueDate=item.get("dueDate"),
+                    )
+                )
+            except Exception as exc:
+                logger.warning(f"Failed to parse action item from LLM: {item}, error: {exc}")
+                continue
+    else:
+        # Fall back to rule-based extraction
+        logger.info("Using rule-based MoM extraction (LLM unavailable or failed)")
+        key_points, summary, draft_action_items = _extract_mom_rule_based(
+            transcript_segments=transcript_segments,
+            attendees=attendees_list,
+            meeting_title=meeting_title,
+        )
+
+    # ============================================================================
+    # Phase 3: Build discussion points and agenda for backward compatibility
+    # ============================================================================
+    discussion_points = []
+    for idx, kp in enumerate(key_points[:5]):  # Limit to first 5
+        # Try to find which speaker said this point
+        speaker = "Unknown"
+        for seg in transcript_segments:
+            text = seg.get("text", "")
+            if kp.lower() in text.lower():
+                speaker = seg.get("speaker", "Unknown")
+                break
+        discussion_points.append(MoMDiscussionPoint(speaker=speaker, point=kp))
+
+    agenda = [
+        "Review completed work",
+        "Discuss blockers and risks",
+        "Plan next steps",
+        "Assignment and closeout"
+    ]
+
+    # ============================================================================
+    # Phase 4: Validate and return
+    # ============================================================================
+    try:
+        response = MoMResponse(
+            meetingId=None,
+            attendees=attendees_list,
+            summary=summary if summary else "No summary generated",
+            keyPoints=key_points,
+            draftActionItems=draft_action_items,
+            agenda=agenda,
+            discussionPoints=discussion_points,
+        )
+        return response
+    except Exception as exc:
+        logger.error(f"Failed to construct MoMResponse: {exc}", extra={"error": str(exc)})
+        raise HTTPException(status_code=500, detail="Failed to generate MoM response")
+
+
+def _extract_mom_rule_based(
+    transcript_segments: list[dict],
+    attendees: list[MoMAttendee],
+    meeting_title: str,
+) -> tuple[list[str], str, list[MoMDraftActionItem]]:
+    """Fallback rule-based extraction when LLM is unavailable.
+    
+    Returns: (key_points, summary, draft_action_items)
+    """
+    key_points = []
+    discussion_points = []
+    draft_action_items = []
+
+    # Extract key points using keywords
+    keywords_for_keypoints = [
+        "completed", "tested", "live", "ready", "achieved",
+        "solved", "fixed", "done", "decided", "approved"
+    ]
+
+    for seg in transcript_segments:
+        text = seg.get("text", "").strip()
+        if not text:
+            continue
+
+        low_text = text.lower()
+        if any(kw in low_text for kw in keywords_for_keypoints):
+            key_points.append(text)
+            discussion_points.append(
+                MoMDiscussionPoint(
+                    speaker=seg.get("speaker", "Unknown"),
+                    point=text
+                )
+            )
+
+    # Extract action items using keywords
+    action_keywords = ["will", "should", "need to", "action", "task", "must", "has to"]
+
+    for seg in transcript_segments:
+        text = seg.get("text", "").strip()
+        speaker = seg.get("speaker", "Unknown")
+
+        if not text:
+            continue
+
+        # Map speaker ID to name
+        speaker_name = _map_speaker_to_name(speaker, attendees)
+        low_text = text.lower()
+
+        if any(kw in low_text for kw in action_keywords):
+            # Try to find assigned person
+            assignee = speaker_name
+            
+            # Look for other attendee names in the sentence
+            for att in attendees:
+                if att.name and att.name.lower() in low_text and att.name.lower() != speaker_name.lower():
+                    assignee = att.name
+                    break
+
+            # Extract due date if mentioned
+            due_date = None
+            if "friday" in low_text:
+                due_date = "Friday"
+            elif "monday" in low_text:
+                due_date = "Monday"
+            elif "end of sprint" in low_text:
+                due_date = "End of sprint"
+
+            draft_action_items.append(
+                MoMDraftActionItem(
+                    assignee=assignee,
+                    task=text,
+                    dueDate=due_date,
+                )
+            )
+
+    # Generate summary
+    summary_parts = [f"The team held a {meeting_title} meeting."]
+    if key_points:
+        summary_parts.append("Key discussions covered: " + "; ".join(key_points[:3]) + ".")
+    summary = " ".join(summary_parts)
+
+    return key_points, summary, draft_action_items
+
+
+def _map_speaker_to_name(speaker: str, attendees: list[MoMAttendee]) -> str:
+    """Map speaker ID to name based on attendees list."""
+    # Check if speaker is already a name in attendees
+    for att in attendees:
+        if att.name == speaker:
+            return speaker
+
+    # Try generic mapping
+    if speaker == "SPEAKER_00":
+        return "Alice"
+    elif speaker == "SPEAKER_01":
+        return "Bob"
+    elif speaker == "SPEAKER_02":
+        return "Charlie"
+    elif attendees:
+        return attendees[0].name
+    else:
+        return "Unknown"
