@@ -20,11 +20,6 @@ from app.intelligence.schemas.transcript import (
     EmbeddingText,
     SegmentEmbedding,
     WorkloadSummary,
-    MoMRequest,
-    MoMResponse,
-    MoMAttendee,
-    MoMDraftActionItem,
-    MoMDiscussionPoint,
 )
 
 __all__ = [
@@ -47,9 +42,4 @@ __all__ = [
     "EmbeddingText",
     "SegmentEmbedding",
     "WorkloadSummary",
-    "MoMRequest",
-    "MoMResponse",
-    "MoMAttendee",
-    "MoMDraftActionItem",
-    "MoMDiscussionPoint",
 ]

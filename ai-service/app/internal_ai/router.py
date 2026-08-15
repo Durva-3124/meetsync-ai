@@ -25,11 +25,6 @@ from app.intelligence.schemas import (
     SkillMatchRequest,
     SkillMatchResponse,
     Transcript,
-    MoMRequest,
-    MoMResponse,
-    MoMAttendee,
-    MoMDraftActionItem,
-    MoMDiscussionPoint,
 )
 
 logger = logging.getLogger("meetsync-ai.internal-ai")
@@ -43,7 +38,7 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
             last_exception: Exception | None = None
             logger.info(
                 "endpoint.start",
-                extra={"function": fn.__name__, "fn_args": [], "fn_kwargs": {}},
+                extra={"function": fn.__name__, "args": [], "kwargs": {}},
             )
             for attempt in range(1, retries + 1):
                 try:
@@ -352,158 +347,4 @@ def effectiveness_score(request: MeetingEffectivenessRequest) -> MeetingEffectiv
         assignment_coverage=round(assignment_coverage, 3),
         component_weights=weights,
         explanation=explanation,
-    )
-
-
-@internal_ai_router.post("/mom", response_model=MoMResponse)
-@with_timeout_and_retries(timeout_seconds=10.0, retries=3, backoff_seconds=0.3)
-def generate_mom(request: MoMRequest) -> MoMResponse:
-    """Generate Minutes of Meeting (MoM) from meeting transcript and details."""
-    meeting_title = request.meetingTitle or "Sprint Review"
-    transcript_segments = request.transcript
-
-    # 1. Attendees extraction
-    attendees_map = {}
-    # First use provided participants
-    for p in request.participants:
-        name = p.get("name")
-        email = p.get("email")
-        if name:
-            attendees_map[name.lower()] = MoMAttendee(name=name, email=email)
-
-    # Also detect speakers from transcript
-    unique_speakers = set()
-    for seg in transcript_segments:
-        speaker = seg.get("speaker")
-        if speaker:
-            unique_speakers.add(speaker)
-
-    for speaker in sorted(unique_speakers):
-        # map SPEAKER_00 format to Alice/Bob/Charlie or similar if not in participants
-        speaker_name = speaker
-        if speaker == "SPEAKER_00":
-            speaker_name = "Alice"
-        elif speaker == "SPEAKER_01":
-            speaker_name = "Bob"
-        elif speaker == "SPEAKER_02":
-            speaker_name = "Charlie"
-
-        if speaker_name.lower() not in attendees_map:
-            attendees_map[speaker_name.lower()] = MoMAttendee(
-                name=speaker_name,
-                email=f"{speaker_name.lower()}@example.com"
-            )
-
-    attendees_list = list(attendees_map.values())
-    if not attendees_list:
-        attendees_list = [MoMAttendee(name="Unknown Attendee", email="unknown@example.com")]
-
-    # 2. Key points extraction
-    key_points = []
-    discussion_points = []
-
-    # Simple rule-based extraction
-    for idx, seg in enumerate(transcript_segments):
-        text = seg.get("text", "").strip()
-        speaker = seg.get("speaker", "SPEAKER_00")
-
-        # map speaker to name
-        speaker_name = speaker
-        if speaker == "SPEAKER_00":
-            speaker_name = "Alice"
-        elif speaker == "SPEAKER_01":
-            speaker_name = "Bob"
-        elif speaker == "SPEAKER_02":
-            speaker_name = "Charlie"
-
-        if not text:
-            continue
-
-        low_text = text.lower()
-        # Extract key points
-        if any(kw in low_text for kw in ["completed", "tested", "live", "ready", "achieved", "solved", "fixed", "done"]):
-            key_points.append(text)
-            discussion_points.append(MoMDiscussionPoint(speaker=speaker, point=text))
-
-    # Fallback key points if empty
-    if not key_points:
-        key_points = [
-            "Auth module with JWT rotation was completed and tested.",
-            "Meeting schema with processingStatus enum is live.",
-            "AI client scaffold with mock fixtures is ready for integration."
-        ]
-        discussion_points = [
-            MoMDiscussionPoint(speaker="SPEAKER_00", point="Auth module with JWT rotation was completed and tested."),
-            MoMDiscussionPoint(speaker="SPEAKER_01", point="Meeting schema with processingStatus enum is live."),
-            MoMDiscussionPoint(speaker="SPEAKER_02", point="AI client scaffold with mock fixtures is ready for integration.")
-        ]
-
-    # 3. Draft action items extraction
-    draft_action_items = []
-    action_keywords = ["will", "should", "need to", "action", "task", "assign", "todo"]
-
-    for seg in transcript_segments:
-        text = seg.get("text", "").strip()
-        speaker = seg.get("speaker", "SPEAKER_00")
-
-        # map speaker
-        speaker_name = speaker
-        if speaker == "SPEAKER_00":
-            speaker_name = "Alice"
-        elif speaker == "SPEAKER_01":
-            speaker_name = "Bob"
-        elif speaker == "SPEAKER_02":
-            speaker_name = "Charlie"
-
-        low_text = text.lower()
-        if any(kw in low_text for kw in action_keywords):
-            # Try to find a name as assignee
-            assignee = speaker_name
-            # See if other participant's name is in the sentence
-            for att in attendees_list:
-                if att.name.lower() in low_text and att.name.lower() != speaker_name.lower():
-                    assignee = att.name
-                    break
-
-            # Simple clean up of task description
-            task_desc = text
-            # Add draft action item
-            draft_action_items.append(
-                MoMDraftActionItem(
-                    assignee=assignee,
-                    task=task_desc,
-                    dueDate="Friday" if "friday" in low_text else None
-                )
-            )
-
-    # Fallback action items if empty
-    if not draft_action_items:
-        draft_action_items = [
-            MoMDraftActionItem(assignee="Alice", task="Integrate authentication in the frontend review editor", dueDate="2025-08-15"),
-            MoMDraftActionItem(assignee="Bob", task="Configure Redis caching layer in development environment", dueDate="2025-08-18")
-        ]
-
-    # 4. Summary generation
-    summary = f"The team held a {meeting_title} meeting. "
-    if key_points:
-        summary += "Key discussions covered: " + "; ".join(key_points[:3]) + "."
-    else:
-        summary += "All planned development tasks were reviewed and outstanding action items were assigned."
-
-    # 5. Backwards compatible agenda
-    agenda = [
-        "Sprint review",
-        "Demo of completed features",
-        "Retrospective",
-        "Next sprint planning"
-    ]
-
-    return MoMResponse(
-        meetingId=None,
-        attendees=attendees_list,
-        summary=summary,
-        keyPoints=key_points,
-        draftActionItems=draft_action_items,
-        agenda=agenda,
-        discussionPoints=discussion_points
     )
