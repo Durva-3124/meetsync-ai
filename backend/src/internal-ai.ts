@@ -121,8 +121,13 @@ function normalizeDecisionEntry(
   }
 
   const source_span: DecisionSourceSpan = {
-    transcript_id: (span as Record<string, unknown>).transcript_id ?? transcriptId,
-    segment_id: String((span as Record<string, unknown>).segment_id ?? 'seg_unknown'),
+    transcript_id:
+      typeof (span as Record<string, unknown>).transcript_id === 'string'
+        ? ((span as Record<string, unknown>).transcript_id as string)
+        : transcriptId,
+    segment_id: String(
+      (span as Record<string, unknown>).segment_id ?? 'seg_unknown'
+    ),
     start_seconds: Number((span as Record<string, unknown>).start_seconds ?? 0),
     end_seconds: Number((span as Record<string, unknown>).end_seconds ?? 0),
     text: String((span as Record<string, unknown>).text ?? ''),
@@ -176,7 +181,10 @@ function heuristicDecisionExtraction(
       sentence
     )
   );
-  const decisions = candidates.slice(0, request.max_decisions ?? DEFAULT_MAX_DECISIONS);
+  const decisions = candidates.slice(
+    0,
+    request.max_decisions ?? DEFAULT_MAX_DECISIONS
+  );
 
   if (!decisions.length && sentences.length) {
     decisions.push(sentences[0]);
@@ -206,7 +214,8 @@ async function callChatProvider(
 ): Promise<{ text: string; provider: string } | undefined> {
   if (process.env.OPENAI_API_KEY) {
     try {
-      const OpenAI = (await import('openai')).OpenAI;
+      const modName = 'openai';
+      const OpenAI = (await import(modName)).OpenAI;
       const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
       const response = await client.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -225,7 +234,8 @@ async function callChatProvider(
 
   if (process.env.CLAUDE_API_KEY) {
     try {
-      const { Anthropic } = await import('@anthropic-ai/sdk');
+      const modName = '@anthropic-ai/sdk';
+      const { Anthropic } = await import(modName);
       const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
       const response = await client.completions.create({
         model: 'claude-3.1',
