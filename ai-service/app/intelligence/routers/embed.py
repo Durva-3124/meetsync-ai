@@ -3,7 +3,11 @@
 from fastapi import APIRouter
 
 from app.intelligence.embeddings import embed
-from app.intelligence.schemas import EmbeddingRequest, EmbeddingResponse, SegmentEmbedding
+from app.intelligence.schemas import (
+    EmbeddingRequest,
+    EmbeddingResponse,
+    SegmentEmbedding,
+)
 
 embed_router = APIRouter(prefix="/embed", tags=["intelligence"])
 

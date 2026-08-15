@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.intelligence.schemas import Transcript, TranscribeRequest
+from app.intelligence.schemas import TranscribeRequest, Transcript
+
 transcribe_router = APIRouter(prefix="/transcribe", tags=["intelligence"])
 
 

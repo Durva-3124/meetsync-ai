@@ -2,36 +2,41 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from functools import wraps
-from time import sleep
-from typing import Any, Callable, Optional
 import logging
 import re
 import uuid
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from functools import wraps
+from time import sleep
+from typing import Any
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
 
 from app.intelligence.embeddings import embed
 from app.intelligence.schemas import (
+    DeadlineExtractionRequest,
+    DeadlineExtractionResponse,
+    DeadlineRecord,
     DecisionLog,
     DecisionLogEntry,
     DecisionSourceSpan,
     EmployeeMatch,
     MeetingEffectivenessRequest,
     MeetingEffectivenessResponse,
+    MoMAttendee,
+    MoMDiscussionPoint,
+    MoMDraftActionItem,
+    MoMRequest,
+    MoMResponse,
     SkillMatchCandidate,
     SkillMatchRequest,
     SkillMatchResponse,
     Transcript,
-    MoMRequest,
-    MoMResponse,
-    MoMAttendee,
-    MoMDraftActionItem,
-    MoMDiscussionPoint,
 )
-from app.internal_ai.llm import call_llm_for_mom, get_llm_client
+from app.internal_ai.llm import _extract_date_entities, _normalize_due_date, call_llm_for_mom, get_llm_client
 
 logger = logging.getLogger("meetsync-ai.internal-ai")
 executor = ThreadPoolExecutor(max_workers=4)
@@ -44,23 +49,29 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
             last_exception: Exception | None = None
             logger.info(
                 "endpoint.start",
-                extra={"function": fn.__name__, "fn_args": [], "fn_kwargs": {}},
+                extra={
+                    "function": fn.__name__,
+                    "timeout_seconds": timeout_seconds,
+                    "retries": retries,
+                    "attempt": 1,
+                },
             )
-            for attempt in range(1, retries + 1):
+
+            for attempt in range(1, retries + 2):
                 try:
                     future = executor.submit(fn, *args, **kwargs)
                     result = future.result(timeout=timeout_seconds)
                     if attempt > 1:
                         logger.info(
                             "endpoint.retry_success",
-                            extra={"function": fn.__name__, "attempt": attempt},
+                            extra={"function": fn.__name__, "attempt": attempt, "timeout_seconds": timeout_seconds},
                         )
                     logger.info(
                         "endpoint.complete",
-                        extra={"function": fn.__name__, "attempt": attempt},
+                        extra={"function": fn.__name__, "attempt": attempt, "status": "success"},
                     )
                     return result
-                except FutureTimeoutError as exc:
+                except FutureTimeoutError:
                     logger.warning(
                         "endpoint.timeout",
                         extra={
@@ -69,10 +80,17 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
                             "timeout_seconds": timeout_seconds,
                         },
                     )
-                    last_exception = HTTPException(status_code=504, detail="Request timed out")
+                    last_exception = HTTPException(
+                        status_code=504,
+                        detail={
+                            "code": "request_timeout",
+                            "message": "Request timed out",
+                            "details": {"timeout_seconds": timeout_seconds, "attempt": attempt},
+                        },
+                    )
                 except HTTPException:
                     raise
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "endpoint.failure",
                         extra={
@@ -82,11 +100,21 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
                         },
                     )
                     last_exception = exc
-                if attempt < retries:
+
+                if attempt <= retries:
                     sleep(backoff_seconds * attempt)
+
             if isinstance(last_exception, HTTPException):
                 raise last_exception
-            raise HTTPException(status_code=500, detail=str(last_exception) if last_exception else "Unhandled error")
+
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "internal_server_error",
+                    "message": str(last_exception) if last_exception else "Unhandled error",
+                    "details": {"function": fn.__name__, "attempts": retries + 1},
+                },
+            )
 
         return wrapper
 
@@ -148,14 +176,28 @@ def extract_decisions(payload: dict) -> DecisionLog:
     max_decisions = int(payload.get("max_decisions", 10))
 
     if not transcript_data and not text:
-        raise HTTPException(status_code=400, detail="Provide `transcript` or `text` in the request body")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "validation_error",
+                "message": "Provide `transcript` or `text` in the request body",
+                "details": {"required_fields": ["transcript", "text"]},
+            },
+        )
 
-    transcript: Optional[Transcript] = None
+    transcript: Transcript | None = None
     if transcript_data:
         try:
             transcript = Transcript(**transcript_data)
-        except Exception as exc:  # pragma: no cover - validation errors surfaced to caller
-            raise HTTPException(status_code=400, detail=f"Invalid transcript: {exc}")
+        except (TypeError, ValueError) as exc:  # pragma: no cover - validation errors surfaced to caller
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "validation_error",
+                    "message": "Invalid transcript payload",
+                    "details": {"error": str(exc)},
+                },
+            ) from exc
 
     if not text and transcript:
         text = transcript.text
@@ -178,6 +220,11 @@ def extract_decisions(payload: dict) -> DecisionLog:
         "we should",
         "agree to",
         "will",
+        "discuss",
+        "review",
+        "plan",
+        "finalize",
+        "schedule",
     ]
 
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text or "") if s.strip()]
@@ -356,6 +403,91 @@ def effectiveness_score(request: MeetingEffectivenessRequest) -> MeetingEffectiv
     )
 
 
+def _find_action_item_match(segment_text: str, action_item: dict[str, Any]) -> bool:
+    """Check whether a transcript segment matches an action item by task text or assignee."""
+    if not segment_text:
+        return False
+    haystack = segment_text.lower()
+    task = str(action_item.get("task") or action_item.get("description") or "").lower()
+    assignee = str(action_item.get("assignee") or "").lower()
+    return bool((task and task in haystack) or (assignee and assignee in haystack))
+
+
+@internal_ai_router.post("/deadlines", response_model=DeadlineExtractionResponse)
+@with_timeout_and_retries(timeout_seconds=10.0, retries=2, backoff_seconds=0.5)
+def extract_deadlines(payload: DeadlineExtractionRequest) -> DeadlineExtractionResponse:
+    """Return normalized deadlines derived from transcript or draft action items."""
+    transcript_segments = payload.transcript or []
+    meeting_date = payload.meetingDate
+    draft_action_items = payload.draftActionItems or []
+
+    candidates: list[DeadlineRecord] = []
+    if not draft_action_items and transcript_segments:
+        for seg in transcript_segments:
+            text = str(seg.get("text", "") or "").strip()
+            if not text:
+                continue
+            low = text.lower()
+            if any(keyword in low for keyword in ["will", "should", "must", "need to", "by "]):
+                draft_action_items.append({
+                    "assignee": seg.get("speaker", "Unknown"),
+                    "task": text,
+                    "dueDate": next((entity for entity in _extract_date_entities(text) if entity), None),
+                })
+
+    for item in draft_action_items:
+        description = str(item.get("task") or item.get("description") or "").strip()
+        assignee = str(item.get("assignee") or "Unknown").strip() or "Unknown"
+        due_date_raw = item.get("dueDate") or item.get("deadline")
+
+        raw_text = ""
+        if transcript_segments:
+            for seg in transcript_segments:
+                seg_text = str(seg.get("text", "") or "")
+                if not seg_text or not _find_action_item_match(seg_text, item):
+                    continue
+                raw_text = seg_text.strip()
+                break
+        if not raw_text:
+            raw_text = description or str(due_date_raw or "")
+
+        if due_date_raw is None:
+            for seg in transcript_segments:
+                seg_text = str(seg.get("text", "") or "")
+                entities = _extract_date_entities(seg_text)
+                if entities:
+                    due_date_raw = entities[0]
+                    raw_text = seg_text.strip()
+                    break
+
+        normalized_deadline = _normalize_due_date(str(due_date_raw) if due_date_raw is not None else None, meeting_date)
+        if not normalized_deadline:
+            continue
+
+        score = 0.65
+        if due_date_raw is not None:
+            score += 0.2
+        if any(term in raw_text.lower() for term in ["by", "deadline", "due", "friday", "monday", "tomorrow", "next week", "end of sprint"]):
+            score += 0.1
+        if description and description.lower() in raw_text.lower():
+            score += 0.05
+        confidence = min(1.0, max(0.0, score))
+
+        candidates.append(
+            DeadlineRecord(
+                description=description or raw_text,
+                assignee=assignee,
+                deadline=normalized_deadline,
+                rawText=raw_text,
+                confidence=round(confidence, 3),
+                sourceActionItem=description or None,
+            )
+        )
+
+    candidates.sort(key=lambda item: (-item.confidence, item.assignee, item.deadline))
+    return DeadlineExtractionResponse(deadlines=candidates)
+
+
 @internal_ai_router.post("/mom", response_model=MoMResponse)
 @with_timeout_and_retries(timeout_seconds=15.0, retries=2, backoff_seconds=1.0)
 def generate_mom(request: MoMRequest) -> MoMResponse:
@@ -371,6 +503,7 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
         raise HTTPException(status_code=400, detail="Transcript is required and must not be empty")
 
     meeting_title = request.meetingTitle or "Meeting"
+    meeting_date = getattr(request, "meetingDate", None)
     transcript_segments = request.transcript
     participants = request.participants or []
 
@@ -434,6 +567,7 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
         meeting_title=meeting_title,
         timeout_seconds=10.0,
         client=llm_client,
+        meeting_date=meeting_date,
     )
 
     if llm_output:
@@ -446,14 +580,15 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
         draft_action_items = []
         for item in llm_output.actionItems:
             try:
+                raw_due_date = item.dueDate if hasattr(item, "dueDate") else item.get("dueDate")
                 draft_action_items.append(
                     MoMDraftActionItem(
-                        assignee=item.get("assignee", "Unknown"),
-                        task=item.get("task", ""),
-                        dueDate=item.get("dueDate"),
+                        assignee=item.assignee if hasattr(item, "assignee") else item.get("assignee", "Unknown"),
+                        task=item.task if hasattr(item, "task") else item.get("task", ""),
+                        dueDate=_normalize_due_date(raw_due_date, meeting_date),
                     )
                 )
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 logger.warning(f"Failed to parse action item from LLM: {item}, error: {exc}")
                 continue
     else:
@@ -463,6 +598,7 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
             transcript_segments=transcript_segments,
             attendees=attendees_list,
             meeting_title=meeting_title,
+            meeting_date=meeting_date,
         )
 
     # ============================================================================
@@ -500,15 +636,16 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
             discussionPoints=discussion_points,
         )
         return response
-    except Exception as exc:
-        logger.error(f"Failed to construct MoMResponse: {exc}", extra={"error": str(exc)})
-        raise HTTPException(status_code=500, detail="Failed to generate MoM response")
+    except (TypeError, ValueError) as exc:
+        logger.error("Failed to construct MoMResponse", extra={"error": str(exc)})
+        raise HTTPException(status_code=500, detail="Failed to generate MoM response") from exc
 
 
 def _extract_mom_rule_based(
     transcript_segments: list[dict],
     attendees: list[MoMAttendee],
     meeting_title: str,
+    meeting_date: str | None = None,
 ) -> tuple[list[str], str, list[MoMDraftActionItem]]:
     """Fallback rule-based extraction when LLM is unavailable.
     
@@ -565,18 +702,23 @@ def _extract_mom_rule_based(
 
             # Extract due date if mentioned
             due_date = None
-            if "friday" in low_text:
-                due_date = "Friday"
-            elif "monday" in low_text:
-                due_date = "Monday"
-            elif "end of sprint" in low_text:
+            if "end of sprint" in low_text:
                 due_date = "End of sprint"
+            else:
+                for entity in _extract_date_entities(text):
+                    if entity:
+                        due_date = entity
+                        break
+                if due_date is None and "friday" in low_text:
+                    due_date = "Friday"
+                elif due_date is None and "monday" in low_text:
+                    due_date = "Monday"
 
             draft_action_items.append(
                 MoMDraftActionItem(
                     assignee=assignee,
                     task=text,
-                    dueDate=due_date,
+                    dueDate=_normalize_due_date(due_date, meeting_date),
                 )
             )
 

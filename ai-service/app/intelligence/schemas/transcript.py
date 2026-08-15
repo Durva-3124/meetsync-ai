@@ -199,4 +199,26 @@ class MoMResponse(BaseModel):
 class MoMRequest(BaseModel):
     transcript: list[dict] = Field(min_length=1)
     meetingTitle: str | None = None
+    meetingDate: str | None = None
     participants: list[dict] = Field(default_factory=list)
+
+
+class DeadlineRecord(BaseModel):
+    description: str
+    assignee: str
+    deadline: str
+    rawText: str
+    confidence: float = Field(ge=0, le=1)
+    sourceActionItem: str | None = None
+
+
+class DeadlineExtractionRequest(BaseModel):
+    transcript: list[dict] = Field(default_factory=list)
+    meetingTitle: str | None = None
+    meetingDate: str | None = None
+    draftActionItems: list[dict] = Field(default_factory=list)
+    participants: list[dict] = Field(default_factory=list)
+
+
+class DeadlineExtractionResponse(BaseModel):
+    deadlines: list[DeadlineRecord] = Field(default_factory=list)
