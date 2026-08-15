@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, status
 
-from app.speech.schemas import HealthResponse, TranscriptionRequest, TranscriptionResponse
+from app.speech.schemas import (
+    HealthResponse,
+    TranscriptionRequest,
+    TranscriptionResponse,
+)
 
 speech_router = APIRouter(prefix="/speech", tags=["speech"])
 

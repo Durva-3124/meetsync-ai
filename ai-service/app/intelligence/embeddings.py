@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 
 _DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-_MODEL_CACHE: dict[str, object] = {}
-SentenceTransformer = None
+_MODEL_CACHE: dict[str, Any] = {}
+SentenceTransformer: Any | None = None
 
 
-def get_embedding_model(model_name: str = _DEFAULT_MODEL, device: str = "cpu") -> object:
+def get_embedding_model(model_name: str = _DEFAULT_MODEL, device: str = "cpu") -> Any:
     global SentenceTransformer
     if SentenceTransformer is None:
         from sentence_transformers import SentenceTransformer as _SentenceTransformer
@@ -24,7 +25,12 @@ def get_embedding_model(model_name: str = _DEFAULT_MODEL, device: str = "cpu") -
     return _MODEL_CACHE[cache_key]
 
 
-def embed(texts: Iterable[str], model_name: str = _DEFAULT_MODEL, device: str = "cpu", batch_size: int = 32) -> list[list[float]]:
+def embed(
+    texts: Iterable[str],
+    model_name: str = _DEFAULT_MODEL,
+    device: str = "cpu",
+    batch_size: int = 32,
+) -> list[list[float]]:
     """Return normalized embedding vectors for the provided texts."""
     texts_list = list(texts)
     if not texts_list:
@@ -41,7 +47,13 @@ def embed(texts: Iterable[str], model_name: str = _DEFAULT_MODEL, device: str = 
     return [vector.tolist() for vector in embeddings]
 
 
-def rank_by_similarity(query: str, candidates: Iterable[str], model_name: str = _DEFAULT_MODEL, device: str = "cpu", batch_size: int = 32) -> List[Tuple[str, float]]:
+def rank_by_similarity(
+    query: str,
+    candidates: Iterable[str],
+    model_name: str = _DEFAULT_MODEL,
+    device: str = "cpu",
+    batch_size: int = 32,
+) -> list[tuple[str, float]]:
     """Rank candidate texts by cosine similarity to the query.
 
     Returns a list of (candidate, similarity) sorted descending by similarity.
@@ -66,7 +78,7 @@ def rank_by_similarity(query: str, candidates: Iterable[str], model_name: str = 
     denom = c_norms * (q_norm or 1.0)
     sims = np.dot(cembs, q) / np.where(denom == 0, 1.0, denom)
 
-    results: List[Tuple[str, float]] = []
+    results: list[tuple[str, float]] = []
     for candidate, sim in zip(candidates_list, sims.tolist()):
         results.append((candidate, float(sim)))
 

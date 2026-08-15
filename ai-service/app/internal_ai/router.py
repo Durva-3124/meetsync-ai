@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from functools import wraps
-from time import sleep
-from typing import Any, Callable, Optional
 import logging
 import re
 import uuid
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from functools import wraps
+from time import sleep
+from typing import Any
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
@@ -21,15 +23,15 @@ from app.intelligence.schemas import (
     EmployeeMatch,
     MeetingEffectivenessRequest,
     MeetingEffectivenessResponse,
+    MoMAttendee,
+    MoMDiscussionPoint,
+    MoMDraftActionItem,
+    MoMRequest,
+    MoMResponse,
     SkillMatchCandidate,
     SkillMatchRequest,
     SkillMatchResponse,
     Transcript,
-    MoMRequest,
-    MoMResponse,
-    MoMAttendee,
-    MoMDraftActionItem,
-    MoMDiscussionPoint,
 )
 from app.internal_ai.llm import call_llm_for_mom, get_llm_client
 
@@ -60,7 +62,7 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
                         extra={"function": fn.__name__, "attempt": attempt},
                     )
                     return result
-                except FutureTimeoutError as exc:
+                except FutureTimeoutError:
                     logger.warning(
                         "endpoint.timeout",
                         extra={
@@ -72,7 +74,7 @@ def with_timeout_and_retries(timeout_seconds: float = 10.0, retries: int = 2, ba
                     last_exception = HTTPException(status_code=504, detail="Request timed out")
                 except HTTPException:
                     raise
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     logger.warning(
                         "endpoint.failure",
                         extra={
@@ -150,12 +152,12 @@ def extract_decisions(payload: dict) -> DecisionLog:
     if not transcript_data and not text:
         raise HTTPException(status_code=400, detail="Provide `transcript` or `text` in the request body")
 
-    transcript: Optional[Transcript] = None
+    transcript: Transcript | None = None
     if transcript_data:
         try:
             transcript = Transcript(**transcript_data)
-        except Exception as exc:  # pragma: no cover - validation errors surfaced to caller
-            raise HTTPException(status_code=400, detail=f"Invalid transcript: {exc}")
+        except (TypeError, ValueError) as exc:  # pragma: no cover - validation errors surfaced to caller
+            raise HTTPException(status_code=400, detail=f"Invalid transcript: {exc}") from exc
 
     if not text and transcript:
         text = transcript.text
@@ -178,6 +180,11 @@ def extract_decisions(payload: dict) -> DecisionLog:
         "we should",
         "agree to",
         "will",
+        "discuss",
+        "review",
+        "plan",
+        "finalize",
+        "schedule",
     ]
 
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text or "") if s.strip()]
@@ -453,7 +460,7 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
                         dueDate=item.get("dueDate"),
                     )
                 )
-            except Exception as exc:
+            except (TypeError, ValueError) as exc:
                 logger.warning(f"Failed to parse action item from LLM: {item}, error: {exc}")
                 continue
     else:
@@ -500,9 +507,9 @@ def generate_mom(request: MoMRequest) -> MoMResponse:
             discussionPoints=discussion_points,
         )
         return response
-    except Exception as exc:
-        logger.error(f"Failed to construct MoMResponse: {exc}", extra={"error": str(exc)})
-        raise HTTPException(status_code=500, detail="Failed to generate MoM response")
+    except (TypeError, ValueError) as exc:
+        logger.error("Failed to construct MoMResponse", extra={"error": str(exc)})
+        raise HTTPException(status_code=500, detail="Failed to generate MoM response") from exc
 
 
 def _extract_mom_rule_based(

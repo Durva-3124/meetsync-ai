@@ -3,9 +3,8 @@
 import json
 import logging
 import os
-from typing import Optional
 
-from openai import OpenAI, APIError, APITimeoutError
+from openai import APIError, APITimeoutError, OpenAI
 from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger("meetsync-ai.llm")
@@ -19,9 +18,9 @@ class MoMLLMOutput(BaseModel):
     actionItems: list[dict]  # [{assignee: str, task: str, dueDate?: str}, ...]
 
 
-def get_llm_client() -> Optional[OpenAI]:
+def get_llm_client() -> OpenAI | None:
     """Get OpenAI client if API key is configured.
-    
+
     Returns None if OPENAI_API_KEY is not set, allowing fallback to rule-based extraction.
     """
     api_key = os.getenv("OPENAI_API_KEY")
@@ -30,7 +29,7 @@ def get_llm_client() -> Optional[OpenAI]:
         return None
     try:
         return OpenAI(api_key=api_key)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning(f"Failed to initialize OpenAI client: {exc}")
         return None
 
@@ -80,8 +79,8 @@ def call_llm_for_mom(
     transcript_text: str,
     meeting_title: str,
     timeout_seconds: float = 15.0,
-    client: Optional[OpenAI] = None,
-) -> Optional[MoMLLMOutput]:
+    client: OpenAI | None = None,
+) -> MoMLLMOutput | None:
     """Call OpenAI to generate structured MoM.
     
     Args:
@@ -117,7 +116,11 @@ def call_llm_for_mom(
             timeout=timeout_seconds,
         )
 
-        llm_output = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("LLM response had empty content")
+
+        llm_output = content.strip()
 
         logger.debug(f"LLM raw output: {llm_output}")
 
@@ -150,7 +153,7 @@ def call_llm_for_mom(
 
         return mom_output
 
-    except APITimeoutError as exc:
+    except APITimeoutError:
         logger.warning(
             f"LLM API timeout after {timeout_seconds}s; falling back to rule-based extraction",
             extra={"meeting_title": meeting_title},
@@ -178,9 +181,9 @@ def call_llm_for_mom(
         )
         return None
 
-    except Exception as exc:
+    except Exception:
         logger.exception(
-            f"Unexpected error in LLM generation: {exc}",
+            "Unexpected error in LLM generation",
             extra={"meeting_title": meeting_title},
         )
         return None

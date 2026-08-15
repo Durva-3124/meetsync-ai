@@ -40,7 +40,7 @@ async def log_requests(request: Request, call_next):
     )
     try:
         response = await call_next(request)
-    except Exception as exc:
+    except Exception:
         elapsed = int((time.monotonic() - start) * 1000)
         logger.exception(
             "request.exception",
