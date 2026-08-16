@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { Types } from 'mongoose';
 import { Meeting } from '../models/Meeting.js';
-import { Mom, IMom, IKeyPoint, IDraftActionItem } from '../models/Mom.js';
+import { Mom } from '../models/Mom.js';
 import { ReviewVersion } from '../models/ReviewVersion.js';
 import { requireAuth, AuthRequest } from '../middleware/authMiddleware.js';
 
@@ -52,7 +52,9 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
     }
 
     // Get latest review version for metadata
-    const latestReview = await ReviewVersion.findOne({ meetingId: req.params.id })
+    const latestReview = await ReviewVersion.findOne({
+      meetingId: req.params.id,
+    })
       .sort({ version: -1 })
       .populate('reviewedBy', 'name');
 
@@ -61,12 +63,19 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response) => {
       reviewVersion: latestReview
         ? {
             version: latestReview.version,
-            reviewedBy: (latestReview.reviewedBy as any)?.name || 'Unknown',
+            reviewedBy:
+              typeof latestReview.reviewedBy === 'object' &&
+              latestReview.reviewedBy !== null &&
+              'name' in latestReview.reviewedBy
+                ? (latestReview.reviewedBy as { name: string }).name
+                : 'Unknown',
             reviewedAt: latestReview.createdAt,
             locked: latestReview.locked,
           }
         : null,
-      editableBy: req.user!.role === 'admin' || req.user!.sub === meeting.createdBy.toString(),
+      editableBy:
+        req.user!.role === 'admin' ||
+        req.user!.sub === meeting.createdBy.toString(),
       canLock: req.user!.role === 'admin',
     });
   } catch (error) {
@@ -91,7 +100,10 @@ router.patch('/', requireAuth, async (req: AuthRequest, res: Response) => {
     }
 
     // Check permissions
-    if (req.user!.role === 'employee' && req.user!.sub !== meeting.createdBy.toString()) {
+    if (
+      req.user!.role === 'employee' &&
+      req.user!.sub !== meeting.createdBy.toString()
+    ) {
       res.status(403).json({ message: 'Access denied' });
       return;
     }
@@ -103,8 +115,9 @@ router.patch('/', requireAuth, async (req: AuthRequest, res: Response) => {
     }
 
     // Check if current review is locked
-    const latestReview = await ReviewVersion.findOne({ meetingId: req.params.id })
-      .sort({ version: -1 });
+    const latestReview = await ReviewVersion.findOne({
+      meetingId: req.params.id,
+    }).sort({ version: -1 });
 
     if (latestReview?.locked) {
       res.status(409).json({ message: 'Cannot edit locked MoM version' });
@@ -127,9 +140,27 @@ router.patch('/', requireAuth, async (req: AuthRequest, res: Response) => {
       version: nextVersion,
       reviewedBy: req.user!.sub,
       fields: [
-        { field: 'summary', source: 'manual', original: mom.summary, edited: summary || mom.summary, diff: [] },
-        { field: 'keyPoints', source: 'manual', original: JSON.stringify(mom.keyPoints), edited: JSON.stringify(keyPoints || mom.keyPoints), diff: [] },
-        { field: 'draftActionItems', source: 'manual', original: JSON.stringify(mom.draftActionItems), edited: JSON.stringify(draftActionItems || mom.draftActionItems), diff: [] },
+        {
+          field: 'summary',
+          source: 'manual',
+          original: mom.summary,
+          edited: summary || mom.summary,
+          diff: [],
+        },
+        {
+          field: 'keyPoints',
+          source: 'manual',
+          original: JSON.stringify(mom.keyPoints),
+          edited: JSON.stringify(keyPoints || mom.keyPoints),
+          diff: [],
+        },
+        {
+          field: 'draftActionItems',
+          source: 'manual',
+          original: JSON.stringify(mom.draftActionItems),
+          edited: JSON.stringify(draftActionItems || mom.draftActionItems),
+          diff: [],
+        },
       ],
     });
 
@@ -148,41 +179,46 @@ router.patch('/', requireAuth, async (req: AuthRequest, res: Response) => {
  * POST /api/meetings/:id/mom/lock
  * Lock the current MOM version (prevent further edits)
  */
-router.post('/:momId/lock', requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    if (req.user!.role !== 'admin') {
-      res.status(403).json({ message: 'Only admins can lock MoM' });
-      return;
+router.post(
+  '/:momId/lock',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (req.user!.role !== 'admin') {
+        res.status(403).json({ message: 'Only admins can lock MoM' });
+        return;
+      }
+
+      const meeting = await Meeting.findById(req.params.id);
+      if (!meeting) {
+        res.status(404).json({ message: 'Meeting not found' });
+        return;
+      }
+
+      const latestReview = await ReviewVersion.findOne({
+        meetingId: req.params.id,
+      }).sort({ version: -1 });
+
+      if (!latestReview) {
+        res.status(404).json({ message: 'No review version found' });
+        return;
+      }
+
+      latestReview.locked = true;
+      latestReview.lockedAt = new Date();
+      latestReview.lockedBy = new Types.ObjectId(req.user!.sub);
+      await latestReview.save();
+
+      res.json({
+        message: 'MoM version locked successfully',
+        version: latestReview.version,
+        lockedAt: latestReview.lockedAt,
+      });
+    } catch (error) {
+      console.error('Error locking MOM:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
-
-    const meeting = await Meeting.findById(req.params.id);
-    if (!meeting) {
-      res.status(404).json({ message: 'Meeting not found' });
-      return;
-    }
-
-    const latestReview = await ReviewVersion.findOne({ meetingId: req.params.id })
-      .sort({ version: -1 });
-
-    if (!latestReview) {
-      res.status(404).json({ message: 'No review version found' });
-      return;
-    }
-
-    latestReview.locked = true;
-    latestReview.lockedAt = new Date();
-    latestReview.lockedBy = new Types.ObjectId(req.user!.sub);
-    await latestReview.save();
-
-    res.json({
-      message: 'MoM version locked successfully',
-      version: latestReview.version,
-      lockedAt: latestReview.lockedAt,
-    });
-  } catch (error) {
-    console.error('Error locking MOM:', error);
-    res.status(500).json({ message: 'Internal server error' });
   }
-});
+);
 
 export default router;
