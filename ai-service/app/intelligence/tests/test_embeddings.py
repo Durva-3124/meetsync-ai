@@ -51,6 +51,7 @@ def test_embed_returns_empty_list_for_no_texts(monkeypatch):
 
 def test_embed_returns_normalized_vectors_and_uses_cached_model(monkeypatch):
     monkeypatch.setattr(embeddings, "SentenceTransformer", DummySentenceTransformer)
+    monkeypatch.setenv("MEETSYNC_USE_LOCAL_EMBEDDINGS", "0")   # <-- add this line
 
     first_model = embeddings.get_embedding_model("dummy", device="cpu")
     second_model = embeddings.get_embedding_model("dummy", device="cpu")
@@ -61,7 +62,6 @@ def test_embed_returns_normalized_vectors_and_uses_cached_model(monkeypatch):
     assert all(len(vec) == 3 for vec in vectors)
     assert pytest.approx(np.linalg.norm(vectors[0]), rel=1e-6) == 1.0
     assert pytest.approx(np.linalg.norm(vectors[1]), rel=1e-6) == 1.0
-
 
 def test_rank_by_similarity_sorts_candidates_by_cosine_similarity(monkeypatch):
     def fake_embed(texts, model_name, device, batch_size):
