@@ -130,7 +130,7 @@ class TestSkillMatchEdgeCases:
                     "employee_id": str(uuid.uuid4()),
                     "name": "Alice",
                     "skills": [
-                        {"skill_id": "s1", "name": "Python", "proficiency": 0.9}
+                        {"skill_id": "skill_s1", "name": "Python", "proficiency": 0.9}
                     ],
                     "workload": {"hours_assigned": 20, "hours_capacity": 40},
                 }
@@ -159,7 +159,7 @@ class TestSkillMatchEdgeCases:
                         "employee_id": str(uuid.uuid4()),
                         "name": "Alice",
                         "skills": [
-                            {"skill_id": "s1", "name": "Python", "proficiency": 0.95}
+                            {"skill_id": "skill_s1", "name": "Python", "proficiency": 0.95}
                         ],
                         "workload": {"hours_assigned": 10, "hours_capacity": 40},
                     },
@@ -167,7 +167,7 @@ class TestSkillMatchEdgeCases:
                         "employee_id": str(uuid.uuid4()),
                         "name": "Bob",
                         "skills": [
-                            {"skill_id": "s2", "name": "Frontend", "proficiency": 0.9}
+                            {"skill_id": "skill_s2", "name": "Frontend", "proficiency": 0.9}
                         ],
                         "workload": {"hours_assigned": 35, "hours_capacity": 40},
                     },
@@ -298,7 +298,7 @@ class TestConcurrentRequests:
                             "name": "Alice",
                             "skills": [
                                 {
-                                    "skill_id": "s1",
+                                    "skill_id": "skill_s1",
                                     "name": "Backend",
                                     "proficiency": 0.9,
                                 }
