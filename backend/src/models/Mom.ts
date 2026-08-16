@@ -146,6 +146,4 @@ const momSchema = new Schema<IMom>(
   { timestamps: true }
 );
 
-momSchema.index({ meetingId: 1 });
-
 export const Mom = model<IMom>('Mom', momSchema);
