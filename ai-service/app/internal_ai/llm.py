@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from openai import APIError, APITimeoutError, OpenAI
@@ -175,8 +175,38 @@ def _coerce_meeting_date(meeting_date: str | date | datetime | None) -> datetime
     text = str(meeting_date).strip()
     if not text:
         return None
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
     parsed = dateparser.parse(text) if dateparser is not None else None
     return parsed
+
+
+def _weekday_offset_from_meeting_date(weekday_name: str, meeting_date: str | date | datetime | None) -> str | None:
+    """Resolve a weekday name to the next occurrence on/after the meeting date."""
+    weekdays = {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6,
+    }
+    target = weekdays.get(weekday_name.lower().strip())
+    if target is None:
+        return None
+
+    base = _coerce_meeting_date(meeting_date)
+    if base is None:
+        return None
+
+    current = base.date().weekday()
+    days_ahead = (target - current) % 7
+    if days_ahead == 0:
+        days_ahead = 7
+    return (base.date() + timedelta(days=days_ahead)).isoformat()
 
 
 def _normalize_due_date(raw_due_date: str | None, meeting_date: str | date | datetime | None) -> str | None:
@@ -187,6 +217,10 @@ def _normalize_due_date(raw_due_date: str | None, meeting_date: str | date | dat
     value = str(raw_due_date).strip()
     if not value or value.lower() in {"null", "none"}:
         return None
+
+    weekday_normalized = _weekday_offset_from_meeting_date(value, meeting_date)
+    if weekday_normalized is not None:
+        return weekday_normalized
 
     if dateparser is None:
         return value

@@ -295,6 +295,16 @@ def extract_decisions(payload: dict) -> DecisionLog:
 @internal_ai_router.post("/skill-match", response_model=SkillMatchResponse)
 @with_timeout_and_retries(timeout_seconds=10.0, retries=3, backoff_seconds=0.3)
 def match_skills(request: SkillMatchRequest) -> SkillMatchResponse:
+    if not request.candidates:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "validation_error",
+                "message": "At least one candidate is required",
+                "details": {"field": "candidates"},
+            },
+        )
+
     query_parts = [request.task_description]
     if request.required_skills:
         query_parts.append(" ".join(request.required_skills))
@@ -337,6 +347,16 @@ def _safe_ratio(numerator: float, denominator: float) -> float:
 @internal_ai_router.post("/effectiveness-score", response_model=MeetingEffectivenessResponse)
 @with_timeout_and_retries(timeout_seconds=10.0, retries=3, backoff_seconds=0.3)
 def effectiveness_score(request: MeetingEffectivenessRequest) -> MeetingEffectivenessResponse:
+    if request.duration_seconds <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "validation_error",
+                "message": "duration_seconds must be greater than zero",
+                "details": {"field": "duration_seconds"},
+            },
+        )
+
     talk_times = [item.seconds for item in request.talk_time if item.seconds >= 0]
     speaker_count = len(talk_times)
     total_talk = sum(talk_times)
