@@ -16,7 +16,7 @@ import {
   LogOut,
   Award,
 } from 'lucide-react';
-import { ActiveTab } from '../types';
+import { ActiveTab, CurrentUser } from '../types';
 
 interface HeaderProps {
   darkMode: boolean;
@@ -30,6 +30,7 @@ interface HeaderProps {
   selectedMeetingTitle: string;
   onSignOut?: () => void;
   onViewLearnerProfile?: () => void;
+  currentUser?: CurrentUser;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,11 +45,28 @@ export const Header: React.FC<HeaderProps> = ({
   selectedMeetingTitle,
   onSignOut,
   onViewLearnerProfile,
+  currentUser,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [workspace, setWorkspace] = useState('Enterprise Product Guild');
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
+
+  const activeUser: CurrentUser = currentUser || {
+    name: 'Elena Rostova',
+    email: 'elena.rostova@meetsync.corp',
+    role: 'Enterprise Admin • SOC2 Auditor',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+  };
+
+  const getInitials = (fullName: string): string => {
+    if (!fullName || !fullName.trim()) return 'U';
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const initials = getInitials(activeUser.name);
 
   const notifications = [
     {
@@ -279,30 +297,54 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               aria-label="User profile menu"
             >
-              <div className="relative">
-                <img
-                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80"
-                  alt="Elena Rostova"
-                  className="h-8 w-8 rounded-full object-cover ring-2 ring-[#00F9C7]/50"
-                />
+              <div className="relative shrink-0">
+                {activeUser.avatarUrl ? (
+                  <img
+                    src={activeUser.avatarUrl}
+                    alt={activeUser.name}
+                    className="h-8 w-8 rounded-full object-cover ring-2 ring-[#00F9C7]/50"
+                  />
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-[#1D70F5] to-[#00F9C7] text-slate-950 font-black text-xs flex items-center justify-center ring-2 ring-[#00F9C7]/50">
+                    {initials}
+                  </div>
+                )}
                 <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
               </div>
               <div className="hidden xl:block text-left leading-tight">
                 <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1">
-                  <span>Elena Rostova</span>
-                  <ChevronDown className="w-3 h-3 text-slate-400" />
+                  <span className="truncate max-w-[120px]">{activeUser.name}</span>
+                  <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
                 </div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">VP Product</div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[130px]">
+                  {activeUser.role.split('•')[0].trim()}
+                </div>
               </div>
             </button>
 
             {/* Profile Dropdown Menu */}
             {showProfileMenu && (
-              <div className="absolute right-0 mt-2 w-64 rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-2xl z-50 animate-in fade-in">
-                <div className="px-3 py-2 border-b border-slate-800 text-left">
-                  <div className="text-xs font-bold text-white">Elena Rostova</div>
-                  <div className="text-[11px] text-[#00F9C7] font-mono">elena.rostova@meetsync.corp</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Enterprise Admin · SOC2 Auditor</div>
+              <div className="absolute right-0 mt-2 w-72 rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-2xl z-50 animate-in fade-in">
+                <div className="px-3 py-3 border-b border-slate-800 text-left flex items-center gap-3">
+                  <div className="relative shrink-0">
+                    {activeUser.avatarUrl ? (
+                      <img
+                        src={activeUser.avatarUrl}
+                        alt={activeUser.name}
+                        className="h-10 w-10 rounded-full object-cover ring-2 ring-[#00F9C7]/50"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-[#1D70F5] to-[#00F9C7] text-slate-950 font-black text-sm flex items-center justify-center ring-2 ring-[#00F9C7]/50">
+                        {initials}
+                      </div>
+                    )}
+                    <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
+                  </div>
+                  <div className="overflow-hidden leading-tight">
+                    <div className="text-sm font-bold text-white truncate">{activeUser.name}</div>
+                    <div className="text-[11px] text-[#00F9C7] font-mono truncate mt-0.5">{activeUser.email}</div>
+                    <div className="text-[10px] text-slate-400 mt-1 truncate">{activeUser.role}</div>
+                  </div>
                 </div>
 
                 <div className="py-1 space-y-0.5">
