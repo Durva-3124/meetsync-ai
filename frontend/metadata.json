@@ -1,6 +1,0 @@
-{
-  "name": "MeetSync AI",
-  "description": "Enterprise-grade Meeting Intelligence Platform featuring synchronized media playback, diarized transcriptions, human-in-the-loop MOM editor, and decision traceability matrix.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
