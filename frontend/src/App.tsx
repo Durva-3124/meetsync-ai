@@ -16,13 +16,21 @@ import { CommandPalette } from './components/CommandPalette';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { PRIMARY_MEETING, RECENT_MEETINGS, SPEAKERS } from './mockData';
-import { ActiveTab, Meeting, ActionItem, TranscriptSegment } from './types';
+import { ActiveTab, Meeting, ActionItem, TranscriptSegment, CurrentUser } from './types';
 import { formatDuration } from './utils/time';
 import { X, Award } from 'lucide-react';
+
+const DEFAULT_USER: CurrentUser = {
+  name: 'Elena Rostova',
+  email: 'elena.rostova@meetsync.corp',
+  role: 'Enterprise Admin • SOC2 Auditor',
+  avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+};
 
 export default function App() {
   // Central Dual View State & Navigation Toggle (Default: false -> Public Landing Page)
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(DEFAULT_USER);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
   const [showLearnerProfile, setShowLearnerProfile] = useState<boolean>(false);
@@ -73,7 +81,8 @@ export default function App() {
   };
 
   // Login handler
-  const handleLoginSuccess = (userData: { email: string; name: string; role: string }) => {
+  const handleLoginSuccess = (userData: CurrentUser) => {
+    setCurrentUser(userData);
     setIsLoggedIn(true);
     setAuthModalOpen(false);
     addToast(
@@ -86,8 +95,9 @@ export default function App() {
   // Sign out handler
   const handleSignOut = () => {
     setIsLoggedIn(false);
+    setCurrentUser(DEFAULT_USER);
     setShowLearnerProfile(false);
-    addToast('Signed Out', 'Returned to Enterprise landing page.', 'info');
+    addToast('Signed Out', 'User session ended. Returned to public landing page.', 'info');
   };
 
   // Demo launch handler with direct tab routing
@@ -95,10 +105,11 @@ export default function App() {
     if (targetTab) {
       setActiveTab(targetTab);
     }
+    setCurrentUser(DEFAULT_USER);
     setIsLoggedIn(true);
     addToast(
       'Demo Workspace Connected',
-      `Directly opened ${targetTab === 'mom-editor' ? 'HITL MOM Editor' : targetTab === 'traceability' ? 'Traceability Matrix' : targetTab === 'settings' ? 'Security Settings' : 'Executive Dashboard'}.`,
+      `Logged in as ${DEFAULT_USER.name} (${DEFAULT_USER.role}).`,
       'success'
     );
   };
@@ -371,6 +382,7 @@ export default function App() {
         selectedMeetingTitle={selectedMeeting.title}
         onSignOut={handleSignOut}
         onViewLearnerProfile={() => setShowLearnerProfile(true)}
+        currentUser={currentUser}
       />
 
       <div className="flex">
