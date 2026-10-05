@@ -1,12 +1,33 @@
 import React, { useState } from 'react';
-import { X, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Building2, CheckCircle2 } from 'lucide-react';
+import { X, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Building2, User, CheckCircle2 } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccessLogin: (userData: { email: string; name: string; role: string }) => void;
+  onSuccessLogin: (userData: { email: string; name: string; role: string; avatarUrl?: string }) => void;
   initialMode?: 'login' | 'signup';
 }
+
+export const formatUserName = (raw: string): string => {
+  if (!raw || !raw.trim()) return '';
+  return raw
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
+export const getInitials = (fullName: string): string => {
+  if (!fullName || !fullName.trim()) return 'U';
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+export const deriveNameFromEmail = (rawEmail: string): string => {
+  const prefix = (rawEmail.split('@')[0] || '').replace(/[._-]+/g, ' ').replace(/\d+/g, '').trim();
+  return formatUserName(prefix) || 'Enterprise User';
+};
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
@@ -15,29 +36,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   initialMode = 'login',
 }) => {
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
-  const [email, setEmail] = useState('elena.rostova@meetsync.corp');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('••••••••••••');
-  const [name, setName] = useState('Elena Rostova');
-  const [org, setOrg] = useState('Enterprise Product Guild');
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const finalName = formatUserName(name) || deriveNameFromEmail(email);
+    const initials = getInitials(finalName);
+    const dynamicAvatar = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(finalName)}&backgroundColor=0056d2,1d70f5,00f9c7`;
+
     onSuccessLogin({
-      email,
-      name: mode === 'signup' ? name : 'Elena Rostova',
-      role: 'VP of Product',
+      email: email.trim(),
+      name: finalName,
+      role: mode === 'signup' ? 'Workspace Lead • Product Director' : 'Enterprise Admin • SOC2 Auditor',
+      avatarUrl: dynamicAvatar,
     });
   };
 
   const handleQuickDemoLogin = () => {
     onSuccessLogin({
-      email: 'elena.rostova@meetsync.corp',
       name: 'Elena Rostova',
-      role: 'VP of Product',
+      email: 'elena.rostova@meetsync.corp',
+      role: 'Enterprise Admin • SOC2 Auditor',
+      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
     });
   };
+
+  const previewInitials = getInitials(name || deriveNameFromEmail(email || 'User'));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
@@ -89,19 +117,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'signup' && (
-            <div>
-              <label className="text-xs font-semibold text-slate-300">Full Name</label>
+          
+          {/* Full Name field (Available in both modes for dynamic user sync) */}
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-300">
+                {mode === 'signup' ? 'Full Name' : 'Full Name (or Display Name)'}
+              </label>
+              {name && (
+                <span className="text-[11px] font-mono font-bold text-[#00F9C7] flex items-center gap-1">
+                  Initials: <span className="bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">{previewInitials}</span>
+                </span>
+              )}
+            </div>
+            <div className="relative mt-1.5">
+              <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
               <input
                 type="text"
-                required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Elena Rostova"
-                className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm text-white placeholder-slate-500 focus:border-[#00F9C7] focus:ring-1 focus:ring-[#00F9C7] outline-none"
+                placeholder="e.g. Trisha Moharle"
+                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm text-white placeholder-slate-500 focus:border-[#00F9C7] focus:ring-1 focus:ring-[#00F9C7] outline-none"
               />
             </div>
-          )}
+          </div>
 
           <div>
             <label className="text-xs font-semibold text-slate-300">Work Email Address</label>
@@ -112,7 +151,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@company.com"
+                placeholder="e.g. mohanmoharle13@gmail.com"
                 className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-800 bg-slate-950 text-sm text-white placeholder-slate-500 focus:border-[#00F9C7] focus:ring-1 focus:ring-[#00F9C7] outline-none"
               />
             </div>
