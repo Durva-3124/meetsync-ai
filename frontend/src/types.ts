@@ -83,3 +83,10 @@ export interface Meeting {
 }
 
 export type ActiveTab = 'dashboard' | 'mom-editor' | 'traceability' | 'settings';
+
+export interface CurrentUser {
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  role: string;
+}
