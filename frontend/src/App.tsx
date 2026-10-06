@@ -18,6 +18,12 @@ import { ToastContainer, ToastMessage } from './components/Toast';
 import { PRIMARY_MEETING, RECENT_MEETINGS, SPEAKERS } from './mockData';
 import { ActiveTab, Meeting, ActionItem, TranscriptSegment, CurrentUser } from './types';
 import { formatDuration } from './utils/time';
+import {
+  exportDecisionsToCSV,
+  exportMOMToMarkdown,
+  exportMOMToJiraJSON,
+  exportMOMToPDF,
+} from './utils/export';
 import { X, Award } from 'lucide-react';
 
 const DEFAULT_USER: CurrentUser = {
@@ -66,6 +72,15 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Auto-scroll to top on view or navigation tab change
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    const mainEl = document.querySelector('main');
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, [activeTab, isLoggedIn]);
 
   // Toast dispatch helper
   const addToast = useCallback((title: string, message?: string, type: 'success' | 'info' | 'warning' = 'success') => {
@@ -299,14 +314,17 @@ export default function App() {
     addToast('MOM Approved & Published', 'Audit trail locked and broadcast to team channels.');
   };
 
-  // Export MOM
+  // Export MOM with real file downloads
   const handleExport = (format: 'pdf' | 'markdown' | 'jira') => {
     if (format === 'pdf') {
-      addToast('Generating PDF Document', 'Executive brief formatted with verified decision matrix.');
+      exportMOMToPDF(selectedMeeting);
+      addToast('Executive Brief Generated', 'Print & PDF preview window triggered.');
     } else if (format === 'jira') {
-      addToast('Jira Sync Successful', `${selectedMeeting.actionItems.length} action items synced to sprint backlog.`);
+      const filename = exportMOMToJiraJSON(selectedMeeting);
+      addToast('Jira Backlog Payload Exported', `Downloaded ${filename} for sprint synchronization.`);
     } else {
-      addToast('Markdown Exported', 'Clean Markdown minutes copied to clipboard.');
+      const filename = exportMOMToMarkdown(selectedMeeting);
+      addToast('Markdown Minutes Exported', `Downloaded ${filename} to local system.`);
     }
   };
 
@@ -434,7 +452,7 @@ export default function App() {
                       <h1 className="text-2xl font-bold tracking-tight text-[#00876A] dark:text-[#00F9C7] drop-shadow-[0_0_12px_rgba(0,249,199,0.35)]">
                         {selectedMeeting.title}
                       </h1>
-                      <span className="rounded-md bg-white/70 dark:bg-slate-800 border border-[#B0DEED] dark:border-slate-700 px-2 py-0.5 text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                      <span className="rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-0.5 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 shadow-2xs">
                         {selectedMeeting.status}
                       </span>
                     </div>
@@ -511,9 +529,10 @@ export default function App() {
                 onOpenEditor={() => setActiveTab('mom-editor')}
                 onUpdateDecisionStatus={handleUpdateDecisionStatus}
                 onExportAuditReport={() => {
+                  const filename = exportDecisionsToCSV(selectedMeeting);
                   addToast(
                     'Audit Matrix Exported',
-                    'CSV audit trail with RAG distances generated for compliance archive.'
+                    `Downloaded ${filename} with verifiable RAG coordinates.`
                   );
                 }}
               />
