@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { EnterpriseLandingPage } from './components/landing/EnterpriseLandingPage';
 import { AuthModal } from './components/auth/AuthModal';
 import { CourseraProfilePage } from './components/coursera/CourseraProfilePage';
@@ -15,8 +15,28 @@ import { SettingsTab } from './components/SettingsTab';
 import { CommandPalette } from './components/CommandPalette';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
-import { PRIMARY_MEETING, RECENT_MEETINGS, SPEAKERS } from './mockData';
-import { ActiveTab, Meeting, ActionItem, TranscriptSegment, CurrentUser } from './types';
+import { LoadingState } from './components/common/LoadingState';
+import { EmptyState } from './components/common/EmptyState';
+import {
+  useMeetingsQuery,
+  useMeetingDetailQuery,
+  useUpdateMeetingMutation,
+  useUpdateTranscriptMutation,
+  useAddActionItemMutation,
+  useToggleActionItemMutation,
+  useDeleteActionItemMutation,
+  useAddDecisionMutation,
+  useUpdateDecisionStatusMutation,
+} from './services/useMeetings';
+import {
+  ActiveTab,
+  Meeting,
+  ActionItem,
+  TranscriptSegment,
+  CurrentUser,
+  MeetingDecision,
+  Speaker,
+} from './types';
 import { formatDuration } from './utils/time';
 import {
   exportDecisionsToCSV,
@@ -24,7 +44,7 @@ import {
   exportMOMToJiraJSON,
   exportMOMToPDF,
 } from './utils/export';
-import { X, Award } from 'lucide-react';
+import { X } from 'lucide-react';
 
 const DEFAULT_USER: CurrentUser = {
   name: 'Elena Rostova',
@@ -53,16 +73,39 @@ export default function App() {
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState<boolean>(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Meetings state
-  const [meetings, setMeetings] = useState<Meeting[]>(RECENT_MEETINGS);
-  const [selectedMeetingId, setSelectedMeetingId] = useState<string>(PRIMARY_MEETING.id);
+  // Real backend queries via TanStack Query
+  const {
+    data: meetings = [],
+    isLoading: isMeetingsLoading,
+    refetch: refetchMeetings,
+  } = useMeetingsQuery();
+
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
+
+  // Default to first available meeting ID if none explicitly selected
+  const activeMeetingId = selectedMeetingId || meetings[0]?.id || null;
+
+  const {
+    data: meetingDetail,
+    isLoading: isDetailLoading,
+  } = useMeetingDetailQuery(activeMeetingId);
+
+  // Selected meeting object
+  const selectedMeeting: Meeting | null =
+    meetingDetail || meetings.find((m) => m.id === activeMeetingId) || meetings[0] || null;
+
+  // Real backend mutations
+  const updateMeetingMutation = useUpdateMeetingMutation();
+  const updateTranscriptMutation = useUpdateTranscriptMutation();
+  const addActionItemMutation = useAddActionItemMutation();
+  const toggleActionItemMutation = useToggleActionItemMutation();
+  const deleteActionItemMutation = useDeleteActionItemMutation();
+  const addDecisionMutation = useAddDecisionMutation();
+  const updateDecisionStatusMutation = useUpdateDecisionStatusMutation();
 
   // Playback synchronization state
   const [currentTime, setCurrentTime] = useState<number>(120); // 2 mins in by default
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-
-  const selectedMeeting =
-    meetings.find((m) => m.id === selectedMeetingId) || meetings[0];
 
   // Dark mode class sync to <html>
   useEffect(() => {
@@ -160,19 +203,36 @@ export default function App() {
   }, [isLoggedIn]);
 
   // Current active caption and speaker based on playback time
-  const currentSegment = selectedMeeting.transcript.find(
+  const currentSegment = selectedMeeting?.transcript?.find(
     (seg) => currentTime >= seg.startSeconds && currentTime < seg.endSeconds
   );
+
+  // Dynamically map speakers from meeting attendees
+  const speakersMap = useMemo<Record<string, Speaker>>(() => {
+    const map: Record<string, Speaker> = {};
+    if (selectedMeeting?.attendees) {
+      for (const spk of selectedMeeting.attendees) {
+        map[spk.id] = spk;
+        if (spk.name) {
+          map[spk.name.toLowerCase().replace(/\s+/g, '_')] = spk;
+          const first = spk.name.split(' ')[0].toLowerCase();
+          map[first] = spk;
+        }
+      }
+    }
+    return map;
+  }, [selectedMeeting?.attendees]);
 
   // Playback seek handler
   const handleSeek = (seconds: number) => {
     setCurrentTime(seconds);
   };
 
-  // Flag decision from player or shortcut (S)
-  const handleFlagDecision = (timestamp: number) => {
-    const newDecisionCode = `DEC-${104 + selectedMeeting.decisions.length}`;
-    const newDecision = {
+  // Flag decision from player or shortcut (S) -> Real API mutation
+  const handleFlagDecision = async (timestamp: number) => {
+    if (!selectedMeeting) return;
+    const newDecisionCode = `DEC-${104 + (selectedMeeting.decisions?.length || 0)}`;
+    const newDecision: MeetingDecision = {
       id: `dec-${Date.now()}`,
       code: newDecisionCode,
       statement: `Decision flagged at ${formatDuration(timestamp)} pending executive wording`,
@@ -181,48 +241,49 @@ export default function App() {
       citationSegmentId: currentSegment?.id || 'seg-custom',
       citationTimestamp: Math.floor(timestamp),
       citationQuote: currentSegment?.text || `Recorded audio bookmark at ${formatDuration(timestamp)}`,
-      status: 'verified' as const,
-      category: 'Architecture' as const,
-      consensus: { 'Elena Rostova': 'Approved' as const, 'Marcus Vance': 'Proposed' as const },
+      status: 'verified',
+      category: 'Architecture',
+      consensus: { 'Elena Rostova': 'Approved', 'Marcus Vance': 'Proposed' },
       impactedSystems: ['Platform Core'],
     };
 
-    const updated = meetings.map((m) =>
-      m.id === selectedMeeting.id
-        ? { ...m, decisions: [newDecision, ...m.decisions] }
-        : m
-    );
-    setMeetings(updated);
-    addToast(
-      `Flagged Decision Point: ${newDecisionCode}`,
-      `Timestamp locked at ${formatDuration(timestamp)}. Added to Traceability Matrix.`,
-      'info'
-    );
+    try {
+      await addDecisionMutation.mutateAsync({
+        meetingId: selectedMeeting.id,
+        decision: newDecision,
+      });
+      addToast(
+        `Flagged Decision Point: ${newDecisionCode}`,
+        `Timestamp locked at ${formatDuration(timestamp)}. Added to Traceability Matrix.`,
+        'info'
+      );
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Save Decision', errorMsg, 'warning');
+    }
   };
 
-  // Transcript Turn update (True HITL)
-  const handleUpdateTranscriptSegment = (
+  // Transcript Turn update (True HITL) -> Real API mutation
+  const handleUpdateTranscriptSegment = async (
     segmentId: string,
     updatedText: string,
     updatedSpeakerId?: string
   ) => {
-    const updated = meetings.map((m) => {
-      if (m.id !== selectedMeeting.id) return m;
-      const updatedTranscript = m.transcript.map((seg) => {
-        if (seg.id !== segmentId) return seg;
-        return {
-          ...seg,
+    if (!selectedMeeting) return;
+    try {
+      await updateTranscriptMutation.mutateAsync({
+        meetingId: selectedMeeting.id,
+        segmentId,
+        payload: {
           text: updatedText,
-          speakerId: updatedSpeakerId || seg.speakerId,
-          speakerName: updatedSpeakerId
-            ? SPEAKERS[updatedSpeakerId]?.name || seg.speakerName
-            : seg.speakerName,
-        };
+          speakerId: updatedSpeakerId,
+        },
       });
-      return { ...m, transcript: updatedTranscript };
-    });
-    setMeetings(updated);
-    addToast('Transcript Turn Saved', 'Speaker text updated with zero latency.');
+      addToast('Transcript Turn Saved', 'Speaker text updated on server.');
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Update Transcript', errorMsg, 'warning');
+    }
   };
 
   // Tag decision from transcript row
@@ -230,10 +291,10 @@ export default function App() {
     handleFlagDecision(segment.startSeconds);
   };
 
-  // Extract action item from speech turn
-  const handleAddActionItemFromSpeech = (segment: TranscriptSegment) => {
-    const newItem: ActionItem = {
-      id: `act-${Date.now()}`,
+  // Extract action item from speech turn -> Real API mutation
+  const handleAddActionItemFromSpeech = async (segment: TranscriptSegment) => {
+    if (!selectedMeeting) return;
+    const newItem: Omit<ActionItem, 'id'> = {
       title: `Action from ${segment.speakerName}: "${segment.text.slice(0, 70)}..."`,
       assignee: segment.speakerName,
       dueDate: '2026-10-18',
@@ -242,13 +303,16 @@ export default function App() {
       originTimestamp: segment.startSeconds,
     };
 
-    const updated = meetings.map((m) =>
-      m.id === selectedMeeting.id
-        ? { ...m, actionItems: [newItem, ...m.actionItems] }
-        : m
-    );
-    setMeetings(updated);
-    addToast('Action Item Extracted', `Assigned to ${segment.speakerName} at ${formatDuration(segment.startSeconds)}`);
+    try {
+      await addActionItemMutation.mutateAsync({
+        meetingId: selectedMeeting.id,
+        item: newItem,
+      });
+      addToast('Action Item Extracted', `Assigned to ${segment.speakerName} at ${formatDuration(segment.startSeconds)}`);
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Extract Action Item', errorMsg, 'warning');
+    }
   };
 
   // Copy speech quote
@@ -257,65 +321,82 @@ export default function App() {
     addToast('Quote Copied', 'Citation copied to system clipboard.');
   };
 
-  // Key takeaways update
-  const handleUpdateKeyTakeaways = (takeaways: string[]) => {
-    const updated = meetings.map((m) =>
-      m.id === selectedMeeting.id ? { ...m, keyTakeaways: takeaways } : m
-    );
-    setMeetings(updated);
+  // Key takeaways update -> Real API mutation
+  const handleUpdateKeyTakeaways = async (takeaways: string[]) => {
+    if (!selectedMeeting) return;
+    try {
+      await updateMeetingMutation.mutateAsync({
+        id: selectedMeeting.id,
+        updates: { keyTakeaways: takeaways },
+      });
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Save Takeaways', errorMsg, 'warning');
+    }
   };
 
-  // Action item completion toggle
-  const handleToggleActionItem = (id: string) => {
-    const updated = meetings.map((m) => {
-      if (m.id !== selectedMeeting.id) return m;
-      const updatedActions = m.actionItems.map((act) =>
-        act.id === id ? { ...act, completed: !act.completed } : act
-      );
-      return { ...m, actionItems: updatedActions };
-    });
-    setMeetings(updated);
+  // Action item completion toggle -> Real API mutation
+  const handleToggleActionItem = async (id: string) => {
+    if (!selectedMeeting) return;
+    try {
+      await toggleActionItemMutation.mutateAsync({
+        meetingId: selectedMeeting.id,
+        itemId: id,
+      });
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Update Action Item', errorMsg, 'warning');
+    }
   };
 
-  // Add Action Item
-  const handleAddActionItem = (itemData: Omit<ActionItem, 'id'>) => {
-    const newItem: ActionItem = {
-      ...itemData,
-      id: `act-${Date.now()}`,
-    };
-    const updated = meetings.map((m) =>
-      m.id === selectedMeeting.id
-        ? { ...m, actionItems: [newItem, ...m.actionItems] }
-        : m
-    );
-    setMeetings(updated);
-    addToast('Action Item Added', `Assigned to ${newItem.assignee} for ${newItem.dueDate}`);
+  // Add Action Item -> Real API mutation
+  const handleAddActionItem = async (itemData: Omit<ActionItem, 'id'>) => {
+    if (!selectedMeeting) return;
+    try {
+      await addActionItemMutation.mutateAsync({
+        meetingId: selectedMeeting.id,
+        item: itemData,
+      });
+      addToast('Action Item Added', `Assigned to ${itemData.assignee} for ${itemData.dueDate}`);
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Add Action Item', errorMsg, 'warning');
+    }
   };
 
-  // Delete Action Item
-  const handleDeleteActionItem = (id: string) => {
-    const updated = meetings.map((m) =>
-      m.id === selectedMeeting.id
-        ? { ...m, actionItems: m.actionItems.filter((a) => a.id !== id) }
-        : m
-    );
-    setMeetings(updated);
-    addToast('Action Item Removed', undefined, 'info');
+  // Delete Action Item -> Real API mutation
+  const handleDeleteActionItem = async (id: string) => {
+    if (!selectedMeeting) return;
+    try {
+      await deleteActionItemMutation.mutateAsync({
+        meetingId: selectedMeeting.id,
+        itemId: id,
+      });
+      addToast('Action Item Removed', undefined, 'info');
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Delete Action Item', errorMsg, 'warning');
+    }
   };
 
-  // Publish MOM
-  const handlePublishMOM = () => {
-    const updated = meetings.map((m) =>
-      m.id === selectedMeeting.id
-        ? { ...m, status: 'Approved' as const }
-        : m
-    );
-    setMeetings(updated);
-    addToast('MOM Approved & Published', 'Audit trail locked and broadcast to team channels.');
+  // Publish MOM -> Real API mutation
+  const handlePublishMOM = async () => {
+    if (!selectedMeeting) return;
+    try {
+      await updateMeetingMutation.mutateAsync({
+        id: selectedMeeting.id,
+        updates: { status: 'Approved' },
+      });
+      addToast('MOM Approved & Published', 'Audit trail locked and broadcast to team channels.');
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Publish MOM', errorMsg, 'warning');
+    }
   };
 
   // Export MOM with real file downloads
   const handleExport = (format: 'pdf' | 'markdown' | 'jira') => {
+    if (!selectedMeeting) return;
     if (format === 'pdf') {
       exportMOMToPDF(selectedMeeting);
       addToast('Executive Brief Generated', 'Print & PDF preview window triggered.');
@@ -328,23 +409,26 @@ export default function App() {
     }
   };
 
-  // Update Decision verification status
-  const handleUpdateDecisionStatus = (
+  // Update Decision verification status -> Real API mutation
+  const handleUpdateDecisionStatus = async (
     decisionId: string,
     status: 'verified' | 'disputed' | 'superseded'
   ) => {
-    const updated = meetings.map((m) => {
-      if (m.id !== selectedMeeting.id) return m;
-      const updatedDecisions = m.decisions.map((dec) =>
-        dec.id === decisionId ? { ...dec, status } : dec
+    if (!selectedMeeting) return;
+    try {
+      await updateDecisionStatusMutation.mutateAsync({
+        meetingId: selectedMeeting.id,
+        decisionId,
+        status,
+      });
+      addToast(
+        `Status Updated: ${status.toUpperCase()}`,
+        `Audit record updated for decision #${decisionId.slice(-4)}`
       );
-      return { ...m, decisions: updatedDecisions };
-    });
-    setMeetings(updated);
-    addToast(
-      `Status Updated: ${status.toUpperCase()}`,
-      `Audit record updated for decision #${decisionId.slice(-4)}`
-    );
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Server error';
+      addToast('Failed to Update Decision', errorMsg, 'warning');
+    }
   };
 
   // =========================================================================
@@ -382,6 +466,21 @@ export default function App() {
   // =========================================================================
   // VIEW 2: LOGGED-IN ENTERPRISE MEETING INTELLIGENCE PLATFORM
   // =========================================================================
+
+  // If meetings are loading on first visit
+  if (isMeetingsLoading && meetings.length === 0) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${
+        darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-[#DAEBF2] text-slate-900'
+      }`}>
+        <LoadingState
+          message="Loading Executive Workspace..."
+          subtext="Fetching verified meeting intelligence from REST API"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen transition-colors duration-200 ${
       darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-[#DAEBF2] text-slate-900'
@@ -397,7 +496,7 @@ export default function App() {
         onOpenShortcuts={() => setShortcutsModalOpen(true)}
         mobileMenuOpen={mobileMenuOpen}
         setMobileMenuOpen={setMobileMenuOpen}
-        selectedMeetingTitle={selectedMeeting.title}
+        selectedMeetingTitle={selectedMeeting?.title || 'No Meeting Selected'}
         onSignOut={handleSignOut}
         onViewLearnerProfile={() => setShowLearnerProfile(true)}
         currentUser={currentUser}
@@ -409,7 +508,7 @@ export default function App() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           meetings={meetings}
-          selectedMeetingId={selectedMeetingId}
+          selectedMeetingId={selectedMeeting?.id || ''}
           onSelectMeeting={(id) => {
             setSelectedMeetingId(id);
             setCurrentTime(0);
@@ -444,98 +543,126 @@ export default function App() {
 
             {/* Tab B: HITL MOM Editor */}
             {activeTab === 'mom-editor' && (
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#B0DEED] dark:border-slate-800">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-[#00F9C7] shadow-[0_0_8px_#00F9C7]" />
-                      <h1 className="text-2xl font-bold tracking-tight text-[#00876A] dark:text-[#00F9C7] drop-shadow-[0_0_12px_rgba(0,249,199,0.35)]">
-                        {selectedMeeting.title}
-                      </h1>
-                      <span className="rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-0.5 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 shadow-2xs">
-                        {selectedMeeting.status}
-                      </span>
+              selectedMeeting ? (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#B0DEED] dark:border-slate-800">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-[#00F9C7] shadow-[0_0_8px_#00F9C7]" />
+                        <h1 className="text-2xl font-bold tracking-tight text-[#00876A] dark:text-[#00F9C7] drop-shadow-[0_0_12px_rgba(0,249,199,0.35)]">
+                          {selectedMeeting.title}
+                        </h1>
+                        <span className="rounded-md bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2.5 py-0.5 text-xs font-mono font-bold text-slate-800 dark:text-slate-200 shadow-2xs">
+                          {selectedMeeting.status}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-sm font-medium opacity-90 text-[#00634E] dark:text-[#70E4D3]">
+                        <span>{selectedMeeting.date}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{selectedMeeting.department}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>Host: {selectedMeeting.organizer}</span>
+                      </div>
                     </div>
-                    <div className="mt-1 flex items-center gap-2 text-sm font-medium opacity-90 text-[#00634E] dark:text-[#70E4D3]">
-                      <span>{selectedMeeting.date}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{selectedMeeting.department}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>Host: {selectedMeeting.organizer}</span>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-semibold text-slate-500">
+                        <span className="font-mono text-[#1D70F5] font-bold">
+                          {selectedMeeting.decisions.length}
+                        </span>{' '}
+                        Decisions Locked ·{' '}
+                        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                          {selectedMeeting.actionItems.filter((a) => a.completed).length}
+                        </span>
+                        /{selectedMeeting.actionItems.length} Actions Done
+                      </span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs font-semibold text-slate-500">
-                      <span className="font-mono text-[#1D70F5] font-bold">
-                        {selectedMeeting.decisions.length}
-                      </span>{' '}
-                      Decisions Locked ·{' '}
-                      <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                        {selectedMeeting.actionItems.filter((a) => a.completed).length}
-                      </span>
-                      /{selectedMeeting.actionItems.length} Actions Done
-                    </span>
-                  </div>
+                  {isDetailLoading && !meetingDetail ? (
+                    <LoadingState
+                      message="Loading Meeting Details..."
+                      subtext="Fetching audio synchronized transcripts and minutes"
+                      className="my-12"
+                    />
+                  ) : (
+                    <ResizableSplitLayout
+                      leftComponent={
+                        <MediaSyncPlayer
+                          meeting={selectedMeeting}
+                          currentTime={currentTime}
+                          setCurrentTime={setCurrentTime}
+                          isPlaying={isPlaying}
+                          setIsPlaying={setIsPlaying}
+                          onFlagDecision={handleFlagDecision}
+                          currentCaption={currentSegment?.text}
+                          currentSpeakerName={currentSegment?.speakerName}
+                        />
+                      }
+                      middleComponent={
+                        <TranscriptPanel
+                          transcript={selectedMeeting.transcript || []}
+                          speakers={speakersMap}
+                          currentTime={currentTime}
+                          onSeek={handleSeek}
+                          onUpdateSegment={handleUpdateTranscriptSegment}
+                          onTagDecision={handleTagDecisionFromTranscript}
+                          onAddActionItemFromSpeech={handleAddActionItemFromSpeech}
+                          onCopyQuote={handleCopyQuote}
+                        />
+                      }
+                      rightComponent={
+                        <MOMEditorPanel
+                          meeting={selectedMeeting}
+                          speakers={speakersMap}
+                          onSeek={handleSeek}
+                          onUpdateKeyTakeaways={handleUpdateKeyTakeaways}
+                          onToggleActionItem={handleToggleActionItem}
+                          onAddActionItem={handleAddActionItem}
+                          onDeleteActionItem={handleDeleteActionItem}
+                          onPublishMOM={handlePublishMOM}
+                          onExport={handleExport}
+                        />
+                      }
+                    />
+                  )}
                 </div>
-
-                <ResizableSplitLayout
-                  leftComponent={
-                    <MediaSyncPlayer
-                      meeting={selectedMeeting}
-                      currentTime={currentTime}
-                      setCurrentTime={setCurrentTime}
-                      isPlaying={isPlaying}
-                      setIsPlaying={setIsPlaying}
-                      onFlagDecision={handleFlagDecision}
-                      currentCaption={currentSegment?.text}
-                      currentSpeakerName={currentSegment?.speakerName}
-                    />
-                  }
-                  middleComponent={
-                    <TranscriptPanel
-                      transcript={selectedMeeting.transcript}
-                      speakers={SPEAKERS}
-                      currentTime={currentTime}
-                      onSeek={handleSeek}
-                      onUpdateSegment={handleUpdateTranscriptSegment}
-                      onTagDecision={handleTagDecisionFromTranscript}
-                      onAddActionItemFromSpeech={handleAddActionItemFromSpeech}
-                      onCopyQuote={handleCopyQuote}
-                    />
-                  }
-                  rightComponent={
-                    <MOMEditorPanel
-                      meeting={selectedMeeting}
-                      speakers={SPEAKERS}
-                      onSeek={handleSeek}
-                      onUpdateKeyTakeaways={handleUpdateKeyTakeaways}
-                      onToggleActionItem={handleToggleActionItem}
-                      onAddActionItem={handleAddActionItem}
-                      onDeleteActionItem={handleDeleteActionItem}
-                      onPublishMOM={handlePublishMOM}
-                      onExport={handleExport}
-                    />
-                  }
+              ) : (
+                <EmptyState
+                  title="No Meeting Selected"
+                  description="No meeting session is selected or available on the enterprise backend. Select a meeting from the sidebar or dashboard to start HITL MOM editing."
+                  actionText="View Dashboard"
+                  onAction={() => setActiveTab('dashboard')}
+                  className="my-12"
                 />
-              </div>
+              )
             )}
 
             {/* Tab C: Decision Traceability Matrix */}
             {activeTab === 'traceability' && (
-              <TraceabilityMatrixTab
-                meeting={selectedMeeting}
-                onSeek={handleSeek}
-                onOpenEditor={() => setActiveTab('mom-editor')}
-                onUpdateDecisionStatus={handleUpdateDecisionStatus}
-                onExportAuditReport={() => {
-                  const filename = exportDecisionsToCSV(selectedMeeting);
-                  addToast(
-                    'Audit Matrix Exported',
-                    `Downloaded ${filename} with verifiable RAG coordinates.`
-                  );
-                }}
-              />
+              selectedMeeting ? (
+                <TraceabilityMatrixTab
+                  meeting={selectedMeeting}
+                  onSeek={handleSeek}
+                  onOpenEditor={() => setActiveTab('mom-editor')}
+                  onUpdateDecisionStatus={handleUpdateDecisionStatus}
+                  onExportAuditReport={() => {
+                    const filename = exportDecisionsToCSV(selectedMeeting);
+                    addToast(
+                      'Audit Matrix Exported',
+                      `Downloaded ${filename} with verifiable RAG coordinates.`
+                    );
+                  }}
+                />
+              ) : (
+                <EmptyState
+                  title="No Meeting Selected"
+                  description="Select a meeting to inspect vector-grounded RAG audit trails and citations."
+                  actionText="View Dashboard"
+                  onAction={() => setActiveTab('dashboard')}
+                  className="my-12"
+                />
+              )
             )}
 
             {/* Tab: Settings */}
