@@ -28,10 +28,11 @@ import {
   Bar,
 } from 'recharts';
 import { Meeting } from '../types';
+import { EmptyState } from './common/EmptyState';
 
 interface DashboardTabProps {
   meetings: Meeting[];
-  selectedMeeting: Meeting;
+  selectedMeeting?: Meeting | null;
   onSelectMeeting: (id: string) => void;
   onOpenEditor: () => void;
   onOpenTraceability: () => void;
@@ -46,6 +47,27 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('All');
+
+  if (meetings.length === 0) {
+    return (
+      <div className="space-y-8 pb-12">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-[#00876A] dark:text-[#00F9C7] drop-shadow-[0_0_12px_rgba(0,249,199,0.35)]">
+            Executive Meeting Intelligence
+          </h1>
+          <p className="mt-1 text-sm font-medium opacity-90 text-[#00634E] dark:text-[#70E4D3]">
+            Real-time multi-meeting synthesis, sentiment telemetry, and decision traceability audits
+          </p>
+        </div>
+        <EmptyState
+          title="No Meetings Indexed"
+          description="Your enterprise backend currently has zero recorded meetings. Connect an automated stream or upload a recording."
+        />
+      </div>
+    );
+  }
+
+  const activeMeeting = selectedMeeting || meetings[0];
 
   // Filtered meetings
   const filteredMeetings = meetings.filter((m) => {
@@ -202,7 +224,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 Sentiment & Engagement Trajectory
               </h2>
               <p className="text-xs text-slate-600 dark:text-slate-300">
-                Continuous acoustic & NLP sentiment analysis for: {selectedMeeting.title}
+                Continuous acoustic & NLP sentiment analysis for: {activeMeeting.title}
               </p>
             </div>
             <div className="flex items-center gap-4 text-xs font-medium">
@@ -223,7 +245,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
           <div className="mt-4 h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={selectedMeeting.sentimentTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={activeMeeting.sentimentTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorPositive" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#1D70F5" stopOpacity={0.4} />
@@ -314,7 +336,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={selectedMeeting.speakerAirtime}
+                  data={activeMeeting.speakerAirtime}
                   cx="50%"
                   cy="50%"
                   innerRadius={50}
@@ -322,7 +344,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                   paddingAngle={4}
                   dataKey="percentage"
                 >
-                  {selectedMeeting.speakerAirtime.map((entry, index) => (
+                  {activeMeeting.speakerAirtime.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -338,7 +360,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
           {/* Clean Legend */}
           <div className="space-y-2 pt-2">
-            {selectedMeeting.speakerAirtime.map((speaker) => (
+            {activeMeeting.speakerAirtime.map((speaker) => (
               <div key={speaker.name} className="flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
                   <span
@@ -443,7 +465,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs dark:divide-slate-800/80">
               {filteredMeetings.map((meeting) => {
-                const isCurrent = meeting.id === selectedMeeting.id;
+                const isCurrent = meeting.id === selectedMeeting?.id;
                 return (
                   <tr
                     key={meeting.id}
