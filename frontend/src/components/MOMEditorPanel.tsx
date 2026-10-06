@@ -44,9 +44,13 @@ export const MOMEditorPanel: React.FC<MOMEditorPanelProps> = ({
   onPublishMOM,
   onExport,
 }) => {
-  const [takeaways, setTakeaways] = useState<string[]>(meeting.keyTakeaways);
+  const [takeaways, setTakeaways] = useState<string[]>(meeting.keyTakeaways || []);
   const [isPolishing, setIsPolishing] = useState<boolean>(false);
   const [showAddActionModal, setShowAddActionModal] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    setTakeaways(meeting.keyTakeaways || []);
+  }, [meeting.id, meeting.keyTakeaways]);
 
   // New action item state
   const [newTitle, setNewTitle] = useState('');
@@ -184,24 +188,36 @@ export const MOMEditorPanel: React.FC<MOMEditorPanelProps> = ({
           </div>
 
           <div className="mt-3 space-y-2">
-            {takeaways.map((item, idx) => (
-              <div key={idx} className="group flex items-start gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#1D70F5] shrink-0" />
-                <textarea
-                  value={item}
-                  onChange={(e) => handleTakeawayChange(idx, e.target.value)}
-                  rows={2}
-                  className="flex-1 rounded-lg border border-transparent p-1.5 text-xs text-slate-800 leading-relaxed outline-none transition focus:border-[#1D70F5] focus:bg-white hover:border-slate-200 dark:text-slate-200 dark:focus:bg-slate-800 dark:hover:border-slate-700"
-                />
+            {takeaways.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-800 p-4 text-center text-xs text-slate-500 dark:text-slate-400">
+                <p>No key strategic takeaways recorded yet.</p>
                 <button
-                  onClick={() => handleDeleteTakeaway(idx)}
-                  className="mt-1 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 transition p-1"
-                  title="Delete bullet"
+                  onClick={handleAddTakeaway}
+                  className="mt-1 text-[#1D70F5] dark:text-[#00F9C7] font-semibold hover:underline"
                 >
-                  <Trash2 className="h-3 w-3" />
+                  + Add First Key Takeaway
                 </button>
               </div>
-            ))}
+            ) : (
+              takeaways.map((item, idx) => (
+                <div key={idx} className="group flex items-start gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#1D70F5] shrink-0" />
+                  <textarea
+                    value={item}
+                    onChange={(e) => handleTakeawayChange(idx, e.target.value)}
+                    rows={2}
+                    className="flex-1 rounded-lg border border-transparent p-1.5 text-xs text-slate-800 leading-relaxed outline-none transition focus:border-[#1D70F5] focus:bg-white hover:border-slate-200 dark:text-slate-200 dark:focus:bg-slate-800 dark:hover:border-slate-700"
+                  />
+                  <button
+                    onClick={() => handleDeleteTakeaway(idx)}
+                    className="mt-1 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 transition p-1"
+                    title="Delete bullet"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -227,88 +243,100 @@ export const MOMEditorPanel: React.FC<MOMEditorPanelProps> = ({
           </div>
 
           <div className="mt-3 space-y-2">
-            {meeting.actionItems.map((item) => (
-              <div
-                key={item.id}
-                className={`group flex items-start justify-between gap-3 rounded-xl border p-2.5 transition ${
-                  item.completed
-                    ? 'border-slate-200/60 bg-slate-50/50 opacity-70 dark:border-slate-800 dark:bg-slate-900/40'
-                    : 'border-slate-200 bg-white hover:border-[#B0DEED] dark:border-slate-700 dark:bg-slate-800'
-                }`}
-              >
-                <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                  <button
-                    onClick={() => onToggleActionItem(item.id)}
-                    className="mt-0.5 text-slate-400 hover:text-[#1D70F5] transition"
-                  >
-                    {item.completed ? (
-                      <CheckSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    ) : (
-                      <Square className="h-4 w-4" />
-                    )}
-                  </button>
-
-                  <div className="min-w-0 flex-1">
-                    <div
-                      className={`text-xs font-semibold ${
-                        item.completed
-                          ? 'line-through text-slate-400 dark:text-slate-500'
-                          : 'text-slate-900 dark:text-white'
-                      }`}
-                    >
-                      {item.title}
-                    </div>
-
-                    <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-                      {/* Assignee */}
-                      <div className="flex items-center gap-1">
-                        <User className="h-3 w-3 text-slate-400" />
-                        <span>{item.assignee}</span>
-                      </div>
-
-                      {/* Due date */}
-                      <div className="flex items-center gap-1 font-mono">
-                        <Calendar className="h-3 w-3 text-slate-400" />
-                        <span>{item.dueDate}</span>
-                      </div>
-
-                      {/* Priority */}
-                      <span
-                        className={`text-[10px] font-bold uppercase font-mono ${
-                          item.priority === 'high'
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : item.priority === 'medium'
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-slate-500'
-                        }`}
-                      >
-                        {item.priority}
-                      </span>
-
-                      {/* Origin Timestamp Link */}
-                      {item.originTimestamp !== undefined && item.originTimestamp > 0 && (
-                        <button
-                          onClick={() => onSeek(item.originTimestamp!)}
-                          className="flex items-center gap-0.5 text-[#1D70F5] hover:underline font-mono"
-                          title="Seek to audio moment where this was assigned"
-                        >
-                          <Clock className="h-2.5 w-2.5" />
-                          <span>{formatDuration(item.originTimestamp)}</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
+            {meeting.actionItems.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-800 p-6 text-center text-xs text-slate-500 dark:text-slate-400">
+                <p>No action items assigned for this meeting yet.</p>
                 <button
-                  onClick={() => onDeleteActionItem(item.id)}
-                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 transition p-1"
-                  title="Remove action item"
+                  onClick={() => setShowAddActionModal(true)}
+                  className="mt-2 text-[#1D70F5] dark:text-[#00F9C7] font-semibold hover:underline"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  + Add First Action Item
                 </button>
               </div>
-            ))}
+            ) : (
+              meeting.actionItems.map((item) => (
+                <div
+                  key={item.id}
+                  className={`group flex items-start justify-between gap-3 rounded-xl border p-2.5 transition ${
+                    item.completed
+                      ? 'border-slate-200/60 bg-slate-50/50 opacity-70 dark:border-slate-800 dark:bg-slate-900/40'
+                      : 'border-slate-200 bg-white hover:border-[#B0DEED] dark:border-slate-700 dark:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                    <button
+                      onClick={() => onToggleActionItem(item.id)}
+                      className="mt-0.5 text-slate-400 hover:text-[#1D70F5] transition"
+                    >
+                      {item.completed ? (
+                        <CheckSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      ) : (
+                        <Square className="h-4 w-4" />
+                      )}
+                    </button>
+
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className={`text-xs font-semibold ${
+                          item.completed
+                            ? 'line-through text-slate-400 dark:text-slate-500'
+                            : 'text-slate-900 dark:text-white'
+                        }`}
+                      >
+                        {item.title}
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+                        {/* Assignee */}
+                        <div className="flex items-center gap-1">
+                          <User className="h-3 w-3 text-slate-400" />
+                          <span>{item.assignee}</span>
+                        </div>
+
+                        {/* Due date */}
+                        <div className="flex items-center gap-1 font-mono">
+                          <Calendar className="h-3 w-3 text-slate-400" />
+                          <span>{item.dueDate}</span>
+                        </div>
+
+                        {/* Priority */}
+                        <span
+                          className={`text-[10px] font-bold uppercase font-mono ${
+                            item.priority === 'high'
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : item.priority === 'medium'
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-slate-500'
+                          }`}
+                        >
+                          {item.priority}
+                        </span>
+
+                        {/* Origin Timestamp Link */}
+                        {item.originTimestamp !== undefined && item.originTimestamp > 0 && (
+                          <button
+                            onClick={() => onSeek(item.originTimestamp!)}
+                            className="flex items-center gap-0.5 text-[#1D70F5] hover:underline font-mono"
+                            title="Seek to audio moment where this was assigned"
+                          >
+                            <Clock className="h-2.5 w-2.5" />
+                            <span>{formatDuration(item.originTimestamp)}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => onDeleteActionItem(item.id)}
+                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 transition p-1"
+                    title="Remove action item"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
