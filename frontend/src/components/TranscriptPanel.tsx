@@ -243,7 +243,7 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
 
                 {/* Hover HITL Quick Actions */}
                 {!isEditing && (
-                  <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-1 bg-white/90 dark:bg-slate-850/90 rounded-lg p-1 shadow-xs border border-slate-200 dark:border-slate-700">
+                  <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-1 bg-white/95 dark:bg-slate-800 rounded-lg p-1 shadow-md border border-slate-200 dark:border-slate-700">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
