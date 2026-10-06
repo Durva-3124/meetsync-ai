@@ -139,7 +139,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <FolderOpen className="h-3.5 w-3.5 text-slate-400" />
               </div>
               <div className="space-y-1">
-                {meetings.map((m) => {
+                {meetings.length === 0 ? (
+                  <div className="px-3 py-3 text-xs text-slate-500 dark:text-slate-400 italic text-center rounded-lg border border-dashed border-slate-300 dark:border-slate-800">
+                    No meetings indexed
+                  </div>
+                ) : (
+                  meetings.map((m) => {
                   const isSelected = m.id === selectedMeetingId;
                   return (
                     <button
@@ -169,7 +174,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       {isSelected && <ChevronRight className="h-3.5 w-3.5 text-[#1D70F5] mt-1 shrink-0" />}
                     </button>
                   );
-                })}
+                }))}
               </div>
             </div>
           )}
