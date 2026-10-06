@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { TranscriptSegment, Speaker } from '../types';
 import { formatDuration } from '../utils/time';
+import { EmptyState } from './common/EmptyState';
 
 interface TranscriptPanelProps {
   transcript: TranscriptSegment[];
@@ -135,7 +136,13 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
 
       {/* Transcript Scroll Area */}
       <div ref={containerRef} className="flex-1 overflow-y-auto p-3 space-y-2.5">
-        {filteredTranscript.length === 0 ? (
+        {transcript.length === 0 ? (
+          <EmptyState
+            title="No Transcript Available"
+            description="No diarized speech segments were returned for this meeting session."
+            className="my-8"
+          />
+        ) : filteredTranscript.length === 0 ? (
           <div className="py-12 text-center text-xs text-slate-400">
             No dialogue matching &quot;{searchQuery}&quot;
           </div>
