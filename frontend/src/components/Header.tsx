@@ -33,6 +33,15 @@ interface HeaderProps {
   currentUser?: CurrentUser;
 }
 
+interface NotificationItem {
+  id: string;
+  title: string;
+  desc: string;
+  time: string;
+  unread: boolean;
+  type?: 'action' | 'approval' | 'dispute' | 'security';
+}
+
 export const Header: React.FC<HeaderProps> = ({
   darkMode,
   setDarkMode,
@@ -68,13 +77,15 @@ export const Header: React.FC<HeaderProps> = ({
 
   const initials = getInitials(activeUser.name);
 
-  const notifications = [
+  // Enhanced Notification Center State
+  const [notificationsList, setNotificationsList] = useState<NotificationItem[]>([
     {
       id: '1',
       title: 'Action Item Due Soon',
       desc: 'GraphQL Federation Gateway RFC due Oct 9',
       time: '12m ago',
       unread: true,
+      type: 'action',
     },
     {
       id: '2',
@@ -82,6 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
       desc: 'Sarah Chen approved Q4 Design Tokens v2',
       time: '1h ago',
       unread: true,
+      type: 'approval',
     },
     {
       id: '3',
@@ -89,8 +101,37 @@ export const Header: React.FC<HeaderProps> = ({
       desc: 'Audit required on SQLite conflict resolution',
       time: '3h ago',
       unread: false,
+      type: 'dispute',
     },
-  ];
+    {
+      id: '4',
+      title: 'SOC2 Audit Log Synced',
+      desc: 'Automated cryptographic proof recorded for DEC-104',
+      time: '5h ago',
+      unread: false,
+      type: 'security',
+    },
+  ]);
+
+  const [notificationFilter, setNotificationFilter] = useState<'all' | 'unread' | 'read'>('all');
+
+  const unreadCount = notificationsList.filter((n) => n.unread).length;
+
+  const handleMarkAllRead = () => {
+    setNotificationsList((prev) => prev.map((n) => ({ ...n, unread: false })));
+  };
+
+  const handleToggleRead = (id: string) => {
+    setNotificationsList((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, unread: !n.unread } : n))
+    );
+  };
+
+  const displayedNotifications = notificationsList.filter((n) => {
+    if (notificationFilter === 'unread') return n.unread;
+    if (notificationFilter === 'read') return !n.unread;
+    return true;
+  });
 
   return (
     <header className="sticky top-0 z-40 w-full border-b transition-colors duration-200 border-[#B0DEED] dark:border-slate-800 bg-[#DAEBF2] dark:bg-slate-900 text-slate-900 dark:text-slate-100 backdrop-blur-md">
@@ -243,48 +284,124 @@ export const Header: React.FC<HeaderProps> = ({
               aria-label="Notifications"
             >
               <Bell className="h-4 w-4" />
-              <span className="absolute top-2 right-2 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#1D70F5] opacity-75"></span>
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#1D70F5]"></span>
-              </span>
+              {unreadCount > 0 && (
+                <span className="absolute top-2 right-2 flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#1D70F5] opacity-75"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-[#1D70F5]"></span>
+                </span>
+              )}
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 rounded-xl border border-[#B0DEED] bg-white p-3 shadow-xl dark:border-slate-800 dark:bg-slate-900 z-50">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-800">
-                  <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                    Notifications
-                  </span>
-                  <span className="text-[11px] text-[#1D70F5] font-semibold cursor-pointer hover:underline">
-                    Mark all read
-                  </span>
+              <div className="absolute right-0 mt-2 w-84 sm:w-96 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 z-50 animate-in fade-in zoom-in-95">
+                {/* Header with Title and Mark All Read */}
+                <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                      Notification Center
+                    </span>
+                    {unreadCount > 0 && (
+                      <span className="rounded-full bg-[#1D70F5]/10 px-2 py-0.5 font-mono text-[10px] font-bold text-[#1D70F5] dark:bg-[#1D70F5]/20 dark:text-blue-300">
+                        {unreadCount} new
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleMarkAllRead}
+                    disabled={unreadCount === 0}
+                    className={`text-[11px] font-semibold transition ${
+                      unreadCount > 0
+                        ? 'text-[#1D70F5] hover:underline cursor-pointer dark:text-[#70E4D3]'
+                        : 'text-slate-400 cursor-default'
+                    }`}
+                  >
+                    {unreadCount > 0 ? 'Mark all read' : 'All caught up'}
+                  </button>
                 </div>
-                <div className="mt-2 space-y-2 max-h-72 overflow-y-auto">
-                  {notifications.map((n) => (
-                    <div
-                      key={n.id}
-                      className="rounded-lg p-2.5 transition hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-start gap-2.5"
-                    >
-                      <div className="mt-0.5">
-                        {n.unread ? (
-                          <AlertCircle className="h-3.5 w-3.5 text-[#1D70F5]" />
-                        ) : (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-slate-400" />
-                        )}
-                      </div>
-                      <div className="flex-1 text-left">
-                        <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                          {n.title}
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                          {n.desc}
-                        </div>
-                        <div className="mt-1 text-[10px] text-slate-400 font-mono">
-                          {n.time}
-                        </div>
-                      </div>
+
+                {/* Filter Tabs: All, Unread, Read */}
+                <div className="flex items-center gap-1 pt-2.5 pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={() => setNotificationFilter('all')}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      notificationFilter === 'all'
+                        ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
+                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                  >
+                    All ({notificationsList.length})
+                  </button>
+                  <button
+                    onClick={() => setNotificationFilter('unread')}
+                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      notificationFilter === 'unread'
+                        ? 'bg-[#1D70F5]/15 text-[#1D70F5] dark:bg-[#1D70F5]/30 dark:text-[#00F9C7]'
+                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>Unread</span>
+                    <span className="rounded-full bg-[#1D70F5] text-white px-1.5 py-0.2 text-[9px] font-mono">
+                      {unreadCount}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setNotificationFilter('read')}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                      notificationFilter === 'read'
+                        ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
+                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                  >
+                    Read ({notificationsList.length - unreadCount})
+                  </button>
+                </div>
+
+                {/* Notification Items List */}
+                <div className="mt-2 space-y-1.5 max-h-80 overflow-y-auto">
+                  {displayedNotifications.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-400">
+                      No notifications in this view.
                     </div>
-                  ))}
+                  ) : (
+                    displayedNotifications.map((n) => (
+                      <div
+                        key={n.id}
+                        onClick={() => handleToggleRead(n.id)}
+                        className={`rounded-xl p-2.5 transition flex items-start gap-2.5 cursor-pointer ${
+                          n.unread
+                            ? 'bg-blue-50/60 dark:bg-slate-800/90 border-l-3 border-[#1D70F5] dark:border-[#00F9C7] shadow-2xs'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 opacity-80 border-l-3 border-transparent'
+                        }`}
+                        title="Click to toggle read status"
+                      >
+                        <div className="mt-1 shrink-0">
+                          {n.unread ? (
+                            <span className="flex h-2 w-2 rounded-full bg-[#1D70F5] dark:bg-[#00F9C7]" />
+                          ) : (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-slate-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 text-left min-w-0">
+                          <div
+                            className={`text-xs ${
+                              n.unread
+                                ? 'font-bold text-slate-900 dark:text-white'
+                                : 'font-medium text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {n.title}
+                          </div>
+                          <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-2">
+                            {n.desc}
+                          </div>
+                          <div className="mt-1 text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                            {n.time} · {n.unread ? 'Mark as read' : 'Read'}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
