@@ -328,7 +328,7 @@ export const MediaSyncPlayer: React.FC<MediaSyncPlayerProps> = ({
           </button>
 
           {/* Speed Selector */}
-          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-800 dark:bg-slate-850">
+          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-800">
             {[0.75, 1.0, 1.25, 1.5, 2.0].map((rate) => (
               <button
                 key={rate}
