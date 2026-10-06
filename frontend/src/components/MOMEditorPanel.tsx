@@ -233,7 +233,7 @@ export const MOMEditorPanel: React.FC<MOMEditorPanelProps> = ({
                 className={`group flex items-start justify-between gap-3 rounded-xl border p-2.5 transition ${
                   item.completed
                     ? 'border-slate-200/60 bg-slate-50/50 opacity-70 dark:border-slate-800 dark:bg-slate-900/40'
-                    : 'border-slate-200 bg-white hover:border-[#B0DEED] dark:border-slate-800 dark:bg-slate-850'
+                    : 'border-slate-200 bg-white hover:border-[#B0DEED] dark:border-slate-700 dark:bg-slate-800'
                 }`}
               >
                 <div className="flex items-start gap-2.5 min-w-0 flex-1">
