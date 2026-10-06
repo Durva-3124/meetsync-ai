@@ -1,4 +1,3 @@
-
 import { Meeting, MeetingDecision, ActionItem } from '../types';
 import { formatDuration } from './time';
 

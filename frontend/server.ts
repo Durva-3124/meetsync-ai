@@ -178,12 +178,12 @@ app.patch('/api/meetings/:id/decisions/:decisionId/status', (req: Request, res: 
 // VITE MIDDLEWARE SETUP
 // ----------------------------------------------------
 async function bootstrap() {
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
   if (!isProd) {
     const vite = await createViteServer({
-      server: { middlewareMode: true, host: '0.0.0.0', port: PORT },
+      server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);

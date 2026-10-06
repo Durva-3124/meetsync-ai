@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { X, Lock, Mail, ArrowRight, ShieldCheck, Sparkles, Building2, User, CheckCircle2 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -38,11 +38,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  useEffect(() => {
-    if (isOpen) setMode(initialMode);
-  }, [initialMode, isOpen]);
+  const [password, setPassword] = useState('••••••••••••');
 
   if (!isOpen) return null;
 
@@ -138,7 +134,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
               <input
                 type="text"
-                required={mode === 'signup'}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Trisha Moharle"
