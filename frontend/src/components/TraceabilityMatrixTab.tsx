@@ -19,6 +19,7 @@ import {
 import { MeetingDecision, Meeting } from '../types';
 import { formatDuration } from '../utils/time';
 import { exportDecisionsToCSV } from '../utils/export';
+import { EmptyState } from './common/EmptyState';
 
 interface TraceabilityMatrixTabProps {
   meeting: Meeting;
@@ -186,16 +187,24 @@ export const TraceabilityMatrixTab: React.FC<TraceabilityMatrixTabProps> = ({
 
       {/* Decision Cards List */}
       <div className="space-y-4">
-        {filteredDecisions.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900">
-            <FileCheck className="mx-auto h-8 w-8 text-slate-400" />
-            <h3 className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-              No decisions match your filter
-            </h3>
-            <p className="mt-1 text-xs text-slate-500">
-              Try adjusting your query or resetting status filters.
-            </p>
-          </div>
+        {meeting.decisions.length === 0 ? (
+          <EmptyState
+            title="No Decisions Recorded"
+            description="This meeting has no flagged decisions or commitments in the RAG audit log yet."
+            className="my-8"
+          />
+        ) : filteredDecisions.length === 0 ? (
+          <EmptyState
+            title="No Decisions Match Filter"
+            description="Try adjusting your search query or resetting your status and category filters."
+            actionText="Reset Filters"
+            onAction={() => {
+              setSearchQuery('');
+              setStatusFilter('all');
+              setCategoryFilter('all');
+            }}
+            className="my-8"
+          />
         ) : (
           filteredDecisions.map((decision) => {
             return (
