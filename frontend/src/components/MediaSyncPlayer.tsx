@@ -19,7 +19,7 @@ import { formatTimecode, formatDuration } from '../utils/time';
 interface MediaSyncPlayerProps {
   meeting: Meeting;
   currentTime: number;
-  setCurrentTime: (time: number) => void;
+  setCurrentTime: React.Dispatch<React.SetStateAction<number>>;
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
   onFlagDecision: (timestamp: number) => void;
@@ -46,7 +46,7 @@ export const MediaSyncPlayer: React.FC<MediaSyncPlayerProps> = ({
   const scrubberRef = useRef<HTMLDivElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
 
-  // Playback timer effect
+  // Keep playback time moving without restarting the animation loop on each frame.
   useEffect(() => {
     let animationFrameId: number;
     let lastTimestamp: number = performance.now();
@@ -56,11 +56,11 @@ export const MediaSyncPlayer: React.FC<MediaSyncPlayerProps> = ({
       lastTimestamp = now;
 
       if (isPlaying) {
-        setCurrentTime(
-          Math.min(meeting.durationSeconds, currentTime + deltaSeconds * playbackRate)
-        );
+        setCurrentTime((time) => {
+          return Math.min(meeting.durationSeconds, time + deltaSeconds * playbackRate);
+        });
+        animationFrameId = requestAnimationFrame(loop);
       }
-      animationFrameId = requestAnimationFrame(loop);
     };
 
     if (isPlaying) {
@@ -69,7 +69,11 @@ export const MediaSyncPlayer: React.FC<MediaSyncPlayerProps> = ({
     }
 
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isPlaying, playbackRate, currentTime, meeting.durationSeconds, setCurrentTime]);
+  }, [isPlaying, playbackRate, meeting.durationSeconds, setCurrentTime, setIsPlaying]);
+
+  useEffect(() => {
+    if (isPlaying && currentTime >= meeting.durationSeconds) setIsPlaying(false);
+  }, [currentTime, isPlaying, meeting.durationSeconds, setIsPlaying]);
 
   // Keyboard shortcut listeners (J/K/L/Space/S)
   useEffect(() => {
