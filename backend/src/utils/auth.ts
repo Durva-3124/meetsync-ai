@@ -1,5 +1,6 @@
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
+import { randomUUID } from 'node:crypto';
 import { env } from '../config/env.js';
 
 const ACCESS_TOKEN_TTL = '15m';
@@ -10,6 +11,8 @@ export interface AuthUserPayload {
   email: string;
   role: 'employee' | 'reviewer' | 'admin';
 }
+
+type RefreshTokenType = 'refresh';
 
 export interface TokenPair {
   accessToken: string;
