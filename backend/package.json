@@ -38,7 +38,11 @@
     "nodemailer": "^9.0.3",
     "opossum": "^10.0.0",
     "puppeteer": "^25.4.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "socket.io": "^4.7.5",
+    "prom-client": "^15.1.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
