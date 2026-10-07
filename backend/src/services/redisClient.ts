@@ -17,7 +17,13 @@ export function getRedisClient(): Redis {
       retryStrategy: () => null,
     });
     _client.on('error', (err: Error) => {
-      console.error('[redis]', err.message);
+      // Suppress ECONNRESET errors - Redis is optional and handled gracefully
+      if (!err.message.includes('ECONNRESET')) {
+        console.error('[redis]', err.message);
+      }
+    });
+    _client.on('close', () => {
+      // Connection closed - will retry on next operation
     });
   }
   return _client;
