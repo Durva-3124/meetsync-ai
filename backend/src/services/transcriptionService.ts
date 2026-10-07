@@ -15,6 +15,8 @@ import {
   scoreEffectiveness,
 } from '../integrations/ai/aiClient.js';
 
+import { streamCaptionsToRoom } from '../realtime/captionsRealtime.js';
+
 export const processAudioTranscription = async (
   meetingId: string,
   fileBuffer: Buffer,
@@ -26,6 +28,14 @@ export const processAudioTranscription = async (
 
   try {
     const { transcript } = await transcribeAudio(fileBuffer, mimetype);
+
+    // Kick off "live" captions streaming immediately after transcription.
+    // Real providers can replace this with true streaming; for now we relay
+    // the transcript segments with a small delay.
+    streamCaptionsToRoom(meetingId, transcript, {
+      delayMs: 160,
+      emitDone: true,
+    }).catch(() => undefined);
 
     const meeting = await Meeting.findByIdAndUpdate(
       meetingId,
@@ -84,10 +94,7 @@ export const processAudioTranscription = async (
         await Decision.insertMany(decisions.map((d) => ({ ...d, meetingId })));
       }
     } else {
-      console.error(
-        `[Decisions] meetingId=${meetingId}`,
-        decisionsResult.reason
-      );
+      console.error(`[Decisions] meetingId=${meetingId}`, decisionsResult.reason);
     }
 
     // Persist Deadlines
@@ -106,10 +113,7 @@ export const processAudioTranscription = async (
         );
       }
     } else {
-      console.error(
-        `[Deadlines] meetingId=${meetingId}`,
-        deadlinesResult.reason
-      );
+      console.error(`[Deadlines] meetingId=${meetingId}`, deadlinesResult.reason);
     }
 
     // ── Phase 2: per-action-item skill-match (concurrent) ───────────────────
@@ -126,8 +130,7 @@ export const processAudioTranscription = async (
 
       const taskDocs = actionItems.map((item, i) => {
         const skillResult = skillResults[i];
-        const skillData =
-          skillResult.status === 'fulfilled' ? skillResult.value : null;
+        const skillData = skillResult.status === 'fulfilled' ? skillResult.value : null;
 
         if (skillResult.status === 'rejected') {
           console.error(`[SkillMatch] task="${item.task}"`, skillResult.reason);
@@ -167,9 +170,7 @@ export const processAudioTranscription = async (
 
     // ── Phase 3: effectiveness score — needs decisions + keyPoints + talkTime ─
     const decisions =
-      decisionsResult.status === 'fulfilled'
-        ? decisionsResult.value.decisions
-        : [];
+      decisionsResult.status === 'fulfilled' ? decisionsResult.value.decisions : [];
     const keyPoints =
       momResult.status === 'fulfilled' ? momResult.value.agenda : [];
     const talkTime =
