@@ -8,12 +8,13 @@ import { sendDeadlineReminder } from '../services/emailService.js';
 export const DEADLINE_REMINDER_QUEUE = 'deadlineReminder';
 export const DEADLINE_REMINDER_JOB = 'checkDeadlines';
 
-const connection = { url: env.REDIS_URL };
+// Lazy connection - don't connect at import time
+const getConnection = () => ({ url: env.REDIS_URL });
 
 // Lazy singleton — not instantiated at import time so tests don't hang
 let _queue: Queue | null = null;
 export function getDeadlineReminderQueue(): Queue {
-  if (!_queue) _queue = new Queue(DEADLINE_REMINDER_QUEUE, { connection });
+  if (!_queue) _queue = new Queue(DEADLINE_REMINDER_QUEUE, { connection: getConnection() });
   return _queue;
 }
 
@@ -22,16 +23,19 @@ export function getDeadlineReminderQueue(): Queue {
 // (BullMQ v5 API — replaces the deprecated repeat option on Queue.add).
 
 export async function scheduleDeadlineReminders(): Promise<void> {
-  const scheduler = new JobScheduler(DEADLINE_REMINDER_QUEUE, { connection });
-  await scheduler.upsertJobScheduler(
-    DEADLINE_REMINDER_JOB,
-    { pattern: '0 8 * * *' }, // every day at 08:00
-    DEADLINE_REMINDER_JOB, // jobName
-    {}, // jobData
-    {}, // opts
-    { override: false } // don't reset if already scheduled
-  );
-  await scheduler.close();
+  const scheduler = new JobScheduler(DEADLINE_REMINDER_QUEUE, { connection: getConnection() });
+  try {
+    await scheduler.upsertJobScheduler(
+      DEADLINE_REMINDER_JOB,
+      { pattern: '0 8 * * *' }, // every day at 08:00
+      DEADLINE_REMINDER_JOB, // jobName
+      {}, // jobData
+      {}, // opts
+      { override: false } // don't reset if already scheduled
+    );
+  } finally {
+    await scheduler.close();
+  }
 }
 
 // ── Worker ────────────────────────────────────────────────────────────────────
@@ -104,14 +108,24 @@ export function startDeadlineReminderWorker() {
 
       await Promise.allSettled(sends);
     },
-    { connection }
+    { connection: getConnection() }
   );
 
   worker.on('failed', (job, err) => {
-    console.error(
-      `[deadline-reminder-worker] job ${job?.id} failed:`,
-      err.message
-    );
+    // Suppress ECONNRESET errors - Redis connection issues are transient
+    if (!err.message.includes('ECONNRESET')) {
+      console.error(
+        `[deadline-reminder-worker] job ${job?.id} failed:`,
+        err.message
+      );
+    }
+  });
+
+  worker.on('error', (err) => {
+    // Suppress connection errors - Redis is optional
+    if (!err.message.includes('ECONNRESET') && !err.message.includes('ECONNREFUSED')) {
+      console.error('[deadline-reminder-worker] error:', err.message);
+    }
   });
 
   return worker;

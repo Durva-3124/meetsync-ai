@@ -27,12 +27,13 @@ import { ReviewVersion } from '../models/ReviewVersion.js';
 
 export const EXPORT_QUEUE = 'exportGeneration';
 
-const connection = { url: env.REDIS_URL };
+// Lazy connection - don't connect at import time
+const getConnection = () => ({ url: env.REDIS_URL });
 
 // Lazy singleton — not instantiated at import time so test processes don't hang
 let _queue: Queue | null = null;
 export function getExportQueue(): Queue {
-  if (!_queue) _queue = new Queue(EXPORT_QUEUE, { connection });
+  if (!_queue) _queue = new Queue(EXPORT_QUEUE, { connection: getConnection() });
   return _queue;
 }
 
@@ -434,11 +435,21 @@ export function startExportWorker() {
         throw err;
       }
     },
-    { connection }
+    { connection: getConnection() }
   );
 
   worker.on('failed', (job, err) => {
-    console.error(`[export-worker] job ${job?.id} failed:`, err.message);
+    // Suppress ECONNRESET errors - Redis connection issues are transient
+    if (!err.message.includes('ECONNRESET')) {
+      console.error(`[export-worker] job ${job?.id} failed:`, err.message);
+    }
+  });
+
+  worker.on('error', (err) => {
+    // Suppress connection errors - Redis is optional
+    if (!err.message.includes('ECONNRESET') && !err.message.includes('ECONNREFUSED')) {
+      console.error('[export-worker] error:', err.message);
+    }
   });
 
   return worker;
