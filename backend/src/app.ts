@@ -9,6 +9,9 @@ import deadlineRoutes from './routes/deadlineRoutes.js';
 import scoreRoutes from './routes/scoreRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import exportRoutes from './routes/exportRoutes.js';
+import healthRoutes from './routes/healthRoutes.js';
+import docsRoutes from './routes/docsRoutes.js';
+import metricsRoutes from './routes/metricsRoutes.js';
 import {
   corsMiddleware,
   helmetMiddleware,
@@ -41,9 +44,9 @@ app.use('/api/meetings/:id/score', scoreRoutes);
 app.use('/api/meetings/:id/review', reviewRoutes);
 app.use('/api/meetings/:id/export', exportRoutes);
 
-app.get('/api/health', (_req: Request, res: Response) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+app.use('/api/health', healthRoutes);
+app.use('/api/docs', docsRoutes);
+app.use('/api/metrics', metricsRoutes);
 
 // ── Central error handler (must be last) ──────────────────────────────────────
 app.use(errorHandler);
