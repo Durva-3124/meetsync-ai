@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+:root {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Light Theme Defaults */
+  --primary: #2475F5;
+  --background: #D9EBF3;
+  --card: #FFFFFF;
+  --heading: #008F78;
+  --text-primary: #101B35;
+  --text-secondary: #627A9B;
+  --success: #00843D;
+  --positive: #00B887;
+  --danger: #FF2455;
+  --warning: #E98300;
+  --purple: #8957F5;
+  --neutral: #91A5C1;
+  --border: #B6DFEF;
+  --icon-bg-success: #E3F7EE;
+  --icon-bg-warning: #FFF2E2;
+  --icon-bg-purple: #F0EBFF;
+}
+
+.dark {
+  /* Dark Theme Overrides - High Contrast */
+  --primary: #3B82F6;
+  --background: #0B132B;
+  --card: #1E293B;           /* Solid slate background for container contrast */
+  --heading: #00F5D4;        /* Bright teal for section headers */
+  --text-primary: #F8FAFC;   /* Crisp white for main text and numbers */
+  --text-secondary: #94A3B8; /* Muted readable slate */
+  --border: #334155;
+  --success: #10B981;
+  --positive: #00F5D4;
+  --danger: #EF4444;
+  --warning: #F59E0B;
+  --purple: #A855F7;
+  --neutral: #64748B;
+  --icon-bg-success: rgba(16, 185, 129, 0.15);
+  --icon-bg-warning: rgba(245, 158, 11, 0.15);
+  --icon-bg-purple: rgba(168, 85, 247, 0.15);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--background);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Custom scrollbars for transcript and MOM editor */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
